@@ -1,0 +1,43 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  color: #302c30;
+  background: #f4efe5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-feature-settings: "tnum" 1, "ss01" 1;
+  font-weight: 400;
+  --paper: #fbf8f0;
+  --paper-deep: #eee5d5;
+  --ink: #302c30;
+  --muted: #77736c;
+  --line: #ded6c8;
+  --tomato: #d75b42;
+  --tomato-dark: #af4133;
+  --sunshine: #e9c449;
+  --leaf: #5b7258;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+* { box-sizing: border-box; }
+html { min-width: 0; background: #f4efe5; scroll-behavior: smooth; }
+body { min-width: 0; min-height: 100vh; margin: 0; background: #f4efe5; }
+button, input, textarea, select { font: inherit; }
+button { color: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #b95a3c; outline-offset: 3px; }
+::selection { color: #fffaf0; background: #b64e3c; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

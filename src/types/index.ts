@@ -1,0 +1,69 @@
+export type RSVPStatus = 'going' | 'maybe' | 'not-going'
+
+export type VibeTag =
+  | 'Food Trip'
+  | 'Roadtrip'
+  | 'Tambay'
+  | 'Beach Day'
+  | 'Coffee Run'
+  | 'Birthday'
+
+export interface Member {
+  id: string
+  name: string
+  initials: string
+  color: string
+  isYou?: boolean
+}
+
+export interface RSVP {
+  memberId: string
+  status: RSVPStatus
+  signature?: string
+}
+
+export interface Expense {
+  id: string
+  label: string
+  category: 'stay' | 'food' | 'transpo' | 'other'
+  amount: number
+  paidMemberIds: string[]
+}
+
+export interface Gala {
+  id: string
+  title: string
+  vibe: VibeTag
+  date: string
+  callTime: string
+  gcTime: string
+  venue: string
+  address: string
+  notes: string
+  quorum: number
+  createdBy: string
+  rsvps: RSVP[]
+  expenses: Expense[]
+}
+
+export interface Circle {
+  id: string
+  name: string
+  subtitle: string
+  color: string
+  members: Member[]
+  galas: Gala[]
+}
+
+export interface NewGalaInput {
+  title: string
+  vibe: VibeTag
+  date: string
+  callTime: string
+  gcTime: string
+  venue: string
+  address: string
+  notes: string
+  quorum: number
+  expenses: Omit<Expense, 'id' | 'paidMemberIds'>[]
+}

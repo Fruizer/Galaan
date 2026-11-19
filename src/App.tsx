@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownRight, CalendarDays, CirclePlus, MapPin, PartyPopper, Plus, Sparkles, UsersRound } from 'lucide-react'
+import { CircleHubDialog } from './components/CircleHubDialog'
 import { CircleSwitcher } from './components/CircleSwitcher'
 import { CreateGalaDialog } from './components/CreateGalaDialog'
+import { ExpenseEditorDialog } from './components/ExpenseEditorDialog'
 import { GalaCard } from './components/GalaCard'
 import { GalaDetails } from './components/GalaDetails'
 import { MonthCalendar } from './components/MonthCalendar'
 import { SignatureDialog } from './components/SignatureDialog'
 import { CURRENT_USER_ID, mockCircles } from './data/mockCircles'
-import type { Circle, Gala, NewGalaInput, RSVP } from './types'
+import { useBodyScrollLock } from './hooks/useBodyScrollLock'
+import type { Circle, Expense, Gala, GalaRecap, NewGalaInput, RSVP, RSVPStatus } from './types'
 import './App.css'
 
-const STORAGE_KEY = 'galaan-demo-v2'
+const STORAGE_KEY = 'galaan-demo-v3'
 const INITIAL_MONTH = new Date(2026, 10, 1)
 
 function readSavedCircles(): Circle[] {
@@ -33,6 +36,14 @@ function getMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
+function getDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function isUnlocked(gala: Gala) {
+  return gala.rsvps.filter((rsvp) => rsvp.status === 'going').length >= gala.quorum
+}
+
 function App() {
   const [circles, setCircles] = useState<Circle[]>(readSavedCircles)
   const [activeCircleId, setActiveCircleId] = useState('college')
@@ -41,9 +52,15 @@ function App() {
   const [selectedGalaId, setSelectedGalaId] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isSignatureOpen, setIsSignatureOpen] = useState(false)
+  const [isCircleHubOpen, setIsCircleHubOpen] = useState(false)
   const [signatureGalaId, setSignatureGalaId] = useState<string | null>(null)
+  const [expenseEditor, setExpenseEditor] = useState<{ galaId: string; expense?: Expense } | null>(null)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'drawing' | 'color'>('all')
   const [savedNotice, setSavedNotice] = useState(false)
+  const [todayKey] = useState(() => getDateKey(new Date()))
   const reduceMotion = useReducedMotion()
+
+  useBodyScrollLock(Boolean(selectedGalaId), '(max-width: 720px)')
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(circles))
@@ -67,8 +84,10 @@ function App() {
     return [...months.entries()]
   }, [activeCircle.galas, currentMonthKey])
 
-  const visibleMonthGalas = selectedDate ? monthGalas.filter((gala) => gala.date === selectedDate) : monthGalas
-  const visibleUpcoming = selectedDate ? [] : upcomingMonths
+  const matchesFilter = (gala: Gala) => statusFilter === 'all' || (statusFilter === 'color' ? isUnlocked(gala) : !isUnlocked(gala))
+  const visibleMonthGalas = (selectedDate ? monthGalas.filter((gala) => gala.date === selectedDate) : monthGalas).filter(matchesFilter)
+  const visibleUpcoming = selectedDate ? [] : upcomingMonths.map(([key, galas]) => [key, galas.filter(matchesFilter)] as [string, Gala[]]).filter(([, galas]) => galas.length > 0)
+  const pastGalas = activeCircle.galas.filter((gala) => gala.date < todayKey).sort((a, b) => b.date.localeCompare(a.date))
 
   function updateActiveCircle(update: (circle: Circle) => Circle) {
     setCircles((current) => current.map((circle) => circle.id === activeCircleId ? update(circle) : circle))
@@ -88,9 +107,12 @@ function App() {
     window.setTimeout(() => setSavedNotice(false), 2400)
   }
 
-  function changeOwnRsvp(galaId: string) {
+  function setOwnRsvp(galaId: string, status: RSVPStatus) {
     updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== galaId ? gala : {
-      ...gala, rsvps: gala.rsvps.map((rsvp) => rsvp.memberId === CURRENT_USER_ID ? { memberId: CURRENT_USER_ID, status: 'maybe' } : rsvp),
+      ...gala,
+      rsvps: gala.rsvps.some((rsvp) => rsvp.memberId === CURRENT_USER_ID)
+        ? gala.rsvps.map((rsvp) => rsvp.memberId === CURRENT_USER_ID ? { memberId: CURRENT_USER_ID, status, ...(status === 'going' && rsvp.signature ? { signature: rsvp.signature } : {}) } : rsvp)
+        : [...gala.rsvps, { memberId: CURRENT_USER_ID, status }],
     }) }))
   }
 
@@ -101,6 +123,26 @@ function App() {
           ? expense.paidMemberIds.filter((id) => id !== memberId) : [...expense.paidMemberIds, memberId],
       }),
     }) }))
+  }
+
+  function saveExpense(galaId: string, expense: Omit<Expense, 'id' | 'paidMemberIds'>, expenseId?: string) {
+    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== galaId ? gala : {
+      ...gala,
+      expenses: expenseId
+        ? gala.expenses.map((item) => item.id === expenseId ? { ...item, ...expense } : item)
+        : [...gala.expenses, { ...expense, id: `expense-${crypto.randomUUID()}`, paidMemberIds: [] }],
+    }) }))
+    setExpenseEditor(null)
+  }
+
+  function deleteExpense(galaId: string, expenseId: string) {
+    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== galaId ? gala : {
+      ...gala, expenses: gala.expenses.filter((expense) => expense.id !== expenseId),
+    }) }))
+  }
+
+  function saveRecap(galaId: string, recap: GalaRecap) {
+    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id === galaId ? { ...gala, recap } : gala) }))
   }
 
   function createGala(input: NewGalaInput) {
@@ -123,11 +165,20 @@ function App() {
     setSelectedDate(null)
     setSelectedGalaId(null)
     setMonth(INITIAL_MONTH)
+    setStatusFilter('all')
   }
 
   function shiftMonth(amount: number) {
     setMonth((value) => new Date(value.getFullYear(), value.getMonth() + amount, 1))
     setSelectedDate(null)
+  }
+
+  function chooseRsvp(status: RSVPStatus) {
+    if (!selectedGala) return
+    if (status === 'going') {
+      setSignatureGalaId(selectedGala.id)
+      setIsSignatureOpen(true)
+    } else setOwnRsvp(selectedGala.id, status)
   }
 
   const dialogTransition = reduceMotion ? { duration: 0.01 } : { type: 'spring' as const, duration: 0.42, bounce: 0.12 }
@@ -140,6 +191,7 @@ function App() {
         </a>
         <div className="topbar-context">
           <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} />
+          <button className="invite-trigger" type="button" onClick={() => setIsCircleHubOpen(true)}><UsersRound size={14} /><span>Members</span></button>
           <span className="saved-label"><span className="saved-dot" /> Saved on this device</span>
         </div>
         <button className="top-create-button" type="button" aria-label="Plan a gala" onClick={() => setIsCreateOpen(true)}><Plus size={17} strokeWidth={2.3} /><span>Plan a gala</span></button>
@@ -156,34 +208,41 @@ function App() {
             <MonthCalendar month={month} galas={activeCircle.galas} selectedDate={selectedDate} onSelectDate={setSelectedDate} onShiftMonth={shiftMonth} />
             <section className="gala-feed" aria-labelledby="month-feed-title">
               <div className="feed-heading-row"><div><h2 id="month-feed-title">This month’s galas</h2><p>{selectedDate ? `Plans for ${new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(`${selectedDate}T12:00:00`))}` : `${monthGalas.length} ${monthGalas.length === 1 ? 'plan' : 'plans'} on the calendar`}</p></div>{selectedDate && <button className="text-action" type="button" onClick={() => setSelectedDate(null)}>Show all</button>}</div>
-              {visibleMonthGalas.length > 0 ? <div className="gala-list">{visibleMonthGalas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => setSelectedGalaId(gala.id)} onSign={() => { setSignatureGalaId(gala.id); setIsSignatureOpen(true) }} onMaybe={() => changeOwnRsvp(gala.id)} />)}</div> : (
-                <div className="empty-plans"><CalendarDays size={20} /><div><strong>No gala on this date yet.</strong><span>Make the first move and invite the barkada.</span></div><button type="button" className="small-create" onClick={() => setIsCreateOpen(true)}>Plan one</button></div>
+              <div className="feed-filters" role="group" aria-label="Filter galas by quorum status">{([['all', 'All plans'], ['drawing', 'Drawing'], ['color', 'May Kulay Na']] as const).map(([value, label]) => <button key={value} className={`feed-filter${statusFilter === value ? ' active' : ''}`} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)}>{label}</button>)}</div>
+              {visibleMonthGalas.length > 0 ? <div className="gala-list">{visibleMonthGalas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => setSelectedGalaId(gala.id)} onSign={() => { setSignatureGalaId(gala.id); setIsSignatureOpen(true) }} />)}</div> : (
+                <div className="empty-plans"><CalendarDays size={20} /><div><strong>{selectedDate ? 'No gala on this date yet.' : statusFilter === 'all' ? 'No galas this month yet.' : `No ${statusFilter === 'drawing' ? 'Drawing' : 'May Kulay Na'} plans here.`}</strong><span>{selectedDate ? 'Make the first move and invite the barkada.' : 'Try another filter or start a new plan.'}</span></div><button type="button" className="small-create" onClick={() => setIsCreateOpen(true)}>Plan one</button></div>
               )}
               {visibleUpcoming.length > 0 && <section className="upcoming-section" aria-labelledby="upcoming-title">
                 <div className="feed-heading-row upcoming-heading"><div><h2 id="upcoming-title">Upcoming galas</h2><p>The next months are already looking good.</p></div><ArrowDownRight size={19} aria-hidden="true" /></div>
                 {visibleUpcoming.map(([monthKey, galas]) => {
                   const [year, monthNumber] = monthKey.split('-').map(Number)
                   const upcomingMonth = new Date(year, monthNumber - 1, 1)
-                  return <div className="future-month" key={monthKey}><div className="future-month-label">{formatMonth(upcomingMonth)}</div><div className="gala-list">{galas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => { setSelectedGalaId(gala.id); setMonth(upcomingMonth); setSelectedDate(gala.date) }} onSign={() => { setSignatureGalaId(gala.id); setIsSignatureOpen(true) }} onMaybe={() => changeOwnRsvp(gala.id)} />)}</div></div>
+                  return <div className="future-month" key={monthKey}><div className="future-month-label">{formatMonth(upcomingMonth)}</div><div className="gala-list">{galas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => { setSelectedGalaId(gala.id); setMonth(upcomingMonth); setSelectedDate(gala.date) }} onSign={() => { setSignatureGalaId(gala.id); setIsSignatureOpen(true) }} />)}</div></div>
                 })}
               </section>}
+              {pastGalas.length > 0 && !selectedDate && <section className="past-section" aria-labelledby="past-title"><div className="feed-heading-row"><div><h2 id="past-title">Past galas</h2><p>Good times, kept in one place.</p></div></div><div className="gala-list">{pastGalas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => setSelectedGalaId(gala.id)} onSign={() => setSelectedGalaId(gala.id)} isPast />)}</div></section>}
             </section>
           </section>
 
           <aside className="detail-column" aria-label="Selected gala details">
             {selectedGala ? <>
               <button className="detail-mobile-scrim" type="button" aria-label="Close gala details" onClick={() => setSelectedGalaId(null)} />
-              <GalaDetails gala={selectedGala} members={activeCircle.members} onSign={() => { setSignatureGalaId(selectedGala.id); setIsSignatureOpen(true) }} onMaybe={() => changeOwnRsvp(selectedGala.id)} onTogglePaid={(expenseId, memberId) => togglePaid(selectedGala.id, expenseId, memberId)} onClose={() => setSelectedGalaId(null)} />
+              <GalaDetails key={selectedGala.id} gala={selectedGala} members={activeCircle.members} isPast={selectedGala.date < todayKey} onSign={() => { setSignatureGalaId(selectedGala.id); setIsSignatureOpen(true) }} onSetRsvp={chooseRsvp} onTogglePaid={(expenseId, memberId) => togglePaid(selectedGala.id, expenseId, memberId)} onAddExpense={() => setExpenseEditor({ galaId: selectedGala.id })} onEditExpense={(expense) => setExpenseEditor({ galaId: selectedGala.id, expense })} onDeleteExpense={(expenseId) => { if (window.confirm('Remove this expense from the split?')) deleteExpense(selectedGala.id, expenseId) }} onSaveRecap={(recap) => saveRecap(selectedGala.id, recap)} onClose={() => setSelectedGalaId(null)} />
             </> : (
               <div className="circle-note-panel"><div className="note-scribble"><Sparkles size={20} /></div><h2>Plans are better together.</h2><p>Pick a date or a gala to see who’s in, where you’re headed, and how much to ambag.</p><div className="note-illustration" aria-hidden="true"><span className="note-stamp"><PartyPopper size={22} /></span><span className="note-line note-line-one" /><span className="note-line note-line-two" /><span className="note-sun" /></div><div className="circle-note-foot"><MapPin size={14} /><span>For your {activeCircle.name.toLowerCase()}</span></div></div>
             )}
-            <div className="member-strip"><div className="member-strip-heading"><span>In the circle</span><span>{activeCircle.members.length} members</span></div><div className="member-avatars" aria-label={activeCircle.members.map((member) => member.name).join(', ')}>{activeCircle.members.slice(0, 7).map((member) => <span className="member-avatar" key={member.id} title={member.name} style={{ backgroundColor: member.color }}>{member.initials}</span>)}{activeCircle.members.length > 7 && <span className="member-avatar more-members">+{activeCircle.members.length - 7}</span>}</div></div>
+            <div className="member-strip"><div className="member-strip-heading"><span>In the circle</span><button type="button" onClick={() => setIsCircleHubOpen(true)}>{activeCircle.members.length} members · View all</button></div><div className="member-avatars" aria-label={activeCircle.members.map((member) => member.name).join(', ')}>{activeCircle.members.slice(0, 7).map((member) => <span className="member-avatar" key={member.id} title={member.name} style={{ backgroundColor: member.color }}>{member.initials}</span>)}{activeCircle.members.length > 7 && <span className="member-avatar more-members">+{activeCircle.members.length - 7}</span>}</div></div>
           </aside>
         </div>
       </main>
 
       <button className="mobile-fab" type="button" onClick={() => setIsCreateOpen(true)} aria-label="Plan a gala"><CirclePlus size={22} /><span>Plan a gala</span></button>
-      <AnimatePresence>{isCreateOpen && <CreateGalaDialog onClose={() => setIsCreateOpen(false)} onCreate={createGala} transition={dialogTransition} />}{isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}</AnimatePresence>
+      <AnimatePresence>
+        {isCreateOpen && <CreateGalaDialog onClose={() => setIsCreateOpen(false)} onCreate={createGala} transition={dialogTransition} />}
+        {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}
+        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
+        {expenseEditor && <ExpenseEditorDialog key={`${expenseEditor.galaId}-${expenseEditor.expense?.id ?? 'new'}`} initial={expenseEditor.expense} onClose={() => setExpenseEditor(null)} onSave={(expense) => saveExpense(expenseEditor.galaId, expense, expenseEditor.expense?.id)} transition={dialogTransition} />}
+      </AnimatePresence>
       <AnimatePresence>{savedNotice && <motion.div className="saved-toast" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={{ duration: 0.18 }}><span className="toast-check">✓</span> Pirma saved. You’re on the list.</motion.div>}</AnimatePresence>
     </div>
   )

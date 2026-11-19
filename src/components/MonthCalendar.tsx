@@ -45,7 +45,10 @@ export function MonthCalendar({ month, galas, selectedDate, onSelectDate, onShif
           const key = dateKey(date)
           const dayGalas = eventsByDate.get(key) ?? []
           const isSelected = selectedDate === key
-          return <button key={key} type="button" className={`calendar-day${isSelected ? ' selected' : ''}${dayGalas.length ? ' has-events' : ''}`} aria-label={`${new Intl.DateTimeFormat('en-PH', { month: 'long', day: 'numeric' }).format(date)}${dayGalas.length ? `, ${dayGalas.length} ${dayGalas.length === 1 ? 'gala' : 'galas'}` : ''}`} aria-pressed={isSelected} onClick={() => onSelectDate(isSelected ? null : key)}>
+          const hasColor = dayGalas.some((gala) => statusFor(gala) === 'color')
+          const hasDrawing = dayGalas.some((gala) => statusFor(gala) === 'drawing')
+          const statusText = dayGalas.length ? dayGalas.map((gala) => statusFor(gala) === 'color' ? 'May Kulay Na' : 'Drawing').join(', ') : ''
+          return <button key={key} type="button" className={`calendar-day${isSelected ? ' selected' : ''}${dayGalas.length ? ' has-events' : ''}${hasColor ? ' has-color' : ''}${hasDrawing ? ' has-drawing' : ''}`} aria-label={`${new Intl.DateTimeFormat('en-PH', { month: 'long', day: 'numeric' }).format(date)}${dayGalas.length ? `, ${dayGalas.length} ${dayGalas.length === 1 ? 'gala' : 'galas'}: ${statusText}` : ''}`} aria-pressed={isSelected} onClick={() => onSelectDate(isSelected ? null : key)}>
             <span className="day-number">{date.getDate()}</span>
             <span className="day-dots" aria-hidden="true">{dayGalas.slice(0, 3).map((gala) => <i key={gala.id} className={`day-dot ${statusFor(gala)}`} />)}</span>
           </button>

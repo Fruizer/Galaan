@@ -9,10 +9,12 @@
 - Switch between **College Tropa**, **Cousins**, and **SHS Barkada**, each with its own sample calendar and plans.
 - Browse a monthly calendar and a chronological list of this month's and upcoming galas.
 - See plans move from **Drawing** to **May Kulay Na** when the RSVP quorum is reached.
-- RSVP with a finger-drawn or mouse-drawn **pirma**.
+- Choose Going, Maybe, or Can’t Go; Going uses a finger- or mouse-drawn **pirma**.
 - View event details, call time and GC time, venue links, and notes.
-- Track shared expenses and mark attendees as paid or unpaid.
+- Add, edit, and remove shared expenses, then mark attendees as paid or unpaid.
 - Create a gala with a date, vibe, venue, quorum, and starting expenses.
+- Browse past-gala recaps, save a note, and attach shared album links.
+- View circle members and copy a demo invite link; filter plans by quorum status.
 
 ## Run locally
 

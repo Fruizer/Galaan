@@ -30,6 +30,17 @@ export interface Expense {
   paidMemberIds: string[]
 }
 
+export interface AlbumLink {
+  id: string
+  label: string
+  url: string
+}
+
+export interface GalaRecap {
+  note: string
+  albums: AlbumLink[]
+}
+
 export interface Gala {
   id: string
   title: string
@@ -44,6 +55,7 @@ export interface Gala {
   createdBy: string
   rsvps: RSVP[]
   expenses: Expense[]
+  recap?: GalaRecap
 }
 
 export interface Circle {

@@ -20,6 +20,34 @@ export const mockCircles: Circle[] = [
     ],
     galas: [
       {
+        id: 'oct-picnic',
+        title: 'UP Sunken Garden picnic',
+        vibe: 'Tambay',
+        date: '2026-10-18',
+        callTime: '4:00 PM',
+        gcTime: '4:15 PM',
+        venue: 'Sunken Garden, UP Diliman',
+        address: 'Sunken Garden, University of the Philippines Diliman, Quezon City',
+        notes: 'Bring a banig, snacks, and whatever tea is still fresh.',
+        quorum: 4,
+        createdBy: 'you',
+        rsvps: [
+          { memberId: 'you', status: 'going', signature: 'signed' },
+          { memberId: 'bea', status: 'going', signature: 'signed' },
+          { memberId: 'miguel', status: 'going', signature: 'signed' },
+          { memberId: 'jam', status: 'going', signature: 'signed' },
+        ],
+        expenses: [
+          { id: 'picnic-snacks', label: 'Snacks & drinks', category: 'food', amount: 1250, paidMemberIds: ['you', 'bea', 'miguel', 'jam'] },
+        ],
+        recap: {
+          note: 'Golden hour, too much kwek-kwek, and a playlist that got everyone singing. Same time next month?',
+          albums: [
+            { id: 'picnic-album-1', label: 'Sunday picnic photos', url: 'https://photos.google.com/' },
+          ],
+        },
+      },
+      {
         id: 'la-union',
         title: 'La Union weekend',
         vibe: 'Roadtrip',

@@ -1,6 +1,7 @@
 import { useEffect, type PropsWithChildren } from 'react'
 import { motion } from 'framer-motion'
 import { X } from 'lucide-react'
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock'
 
 interface ModalFrameProps extends PropsWithChildren {
   title: string
@@ -11,6 +12,7 @@ interface ModalFrameProps extends PropsWithChildren {
 }
 
 export function ModalFrame({ title, subtitle, onClose, transition, className = '', children }: ModalFrameProps) {
+  useBodyScrollLock(true)
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') onClose()

@@ -13,8 +13,11 @@
 - View event details, call time and GC time, venue links, and notes.
 - Add, edit, and remove shared expenses, then mark attendees as paid or unpaid.
 - Create a gala with a date, vibe, venue, quorum, and starting expenses.
+- Edit or remove a gala, leave a circle, and update your demo profile.
 - Browse past-gala recaps, save a note, and attach shared album links.
 - View circle members and copy a demo invite link; filter plans by quorum status.
+- Reset the sample circles and local changes from your profile.
+- Switch between warm light and dark appearance in your profile.
 
 ## Run locally
 

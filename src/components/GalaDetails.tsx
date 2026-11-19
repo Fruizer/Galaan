@@ -14,6 +14,8 @@ interface GalaDetailsProps {
   onEditExpense: (expense: Expense) => void
   onDeleteExpense: (expenseId: string) => void
   onSaveRecap: (recap: GalaRecap) => void
+  onEdit: () => void
+  onDelete: () => void
   onClose: () => void
 }
 
@@ -34,7 +36,7 @@ function safeExternalUrl(value: string) {
   }
 }
 
-export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onTogglePaid, onAddExpense, onEditExpense, onDeleteExpense, onSaveRecap, onClose }: GalaDetailsProps) {
+export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onTogglePaid, onAddExpense, onEditExpense, onDeleteExpense, onSaveRecap, onEdit, onDelete, onClose }: GalaDetailsProps) {
   const reduceMotion = useReducedMotion()
   const [recapNote, setRecapNote] = useState(gala.recap?.note ?? '')
   const [albumLabel, setAlbumLabel] = useState('')
@@ -70,7 +72,7 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
   }
 
   return <motion.section className={`details-panel${isPast ? ' details-recap' : quorumMet ? ' details-color' : ' details-drawing'}`} aria-labelledby="details-title" initial={{ opacity: 0, y: reduceMotion ? 0 : 15 }} animate={{ opacity: 1, y: 0 }} transition={reduceMotion ? { duration: 0.01 } : { type: 'spring', stiffness: 300, damping: 27, mass: 0.85 }}>
-    <div className="details-topline"><span className={`status-pill ${isPast ? 'status-recap' : quorumMet ? 'status-color' : 'status-drawing'}`}><i />{isPast ? 'Recap' : quorumMet ? 'May Kulay Na' : 'Drawing'}</span><button className="icon-button details-close" type="button" aria-label="Close gala details" onClick={onClose}><X size={17} /></button></div>
+    <div className="details-topline"><span className={`status-pill ${isPast ? 'status-recap' : quorumMet ? 'status-color' : 'status-drawing'}`}><i />{isPast ? 'Recap' : quorumMet ? 'May Kulay Na' : 'Drawing'}</span><div className="details-top-actions"><button className="details-edit-action" type="button" onClick={onEdit}><PenLine size={13} /> Edit</button><button className="icon-button details-delete" type="button" aria-label="Delete gala" onClick={onDelete}><Trash2 size={15} /></button><button className="icon-button details-close" type="button" aria-label="Close gala details" onClick={onClose}><X size={17} /></button></div></div>
     <div className="details-date-label">{formatLongDate(gala.date)}</div><h2 id="details-title">{gala.title}</h2><span className="details-vibe">{gala.vibe}</span>
     {!isPast && <div className="details-commitment">
       <div className="commitment-copy"><UsersRound size={16} /><strong>{going.length} of {gala.quorum} going</strong><span>{quorumMet ? 'The plan has color.' : `${Math.max(0, gala.quorum - going.length)} more to make it happen.`}</span></div>

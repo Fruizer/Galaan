@@ -5,11 +5,13 @@ import type { Circle } from '../types'
 
 interface CircleHubDialogProps {
   circle: Circle
+  canLeave: boolean
+  onLeave: () => void
   onClose: () => void
   transition: object
 }
 
-export function CircleHubDialog({ circle, onClose, transition }: CircleHubDialogProps) {
+export function CircleHubDialog({ circle, canLeave, onLeave, onClose, transition }: CircleHubDialogProps) {
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState(false)
   const organizerId = circle.galas[0]?.createdBy
@@ -40,5 +42,6 @@ export function CircleHubDialog({ circle, onClose, transition }: CircleHubDialog
       <span><strong>{member.name}</strong><small>{member.isYou ? 'You' : 'Barkada member'}</small></span>
       {member.id === organizerId && <span className="member-role-badge">Organizer</span>}
     </div>)}</div>
+    <div className="leave-circle-row"><div><strong>Leave this circle</strong><span>{canLeave ? 'You can join again if someone invites you.' : 'Keep at least one circle on your account.'}</span></div><button type="button" disabled={!canLeave} onClick={onLeave}>Leave</button></div>
   </ModalFrame>
 }

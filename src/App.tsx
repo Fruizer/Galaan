@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ArrowDownRight, CalendarDays, CirclePlus, MapPin, PartyPopper, Plus, Sparkles, UsersRound } from 'lucide-react'
+import { ArrowDownRight, CalendarDays, CirclePlus, MapPin, PartyPopper, Plus, Sparkles, UserRound, UsersRound } from 'lucide-react'
 import { CircleHubDialog } from './components/CircleHubDialog'
 import { CircleSwitcher } from './components/CircleSwitcher'
 import { CreateGalaDialog } from './components/CreateGalaDialog'
@@ -8,6 +8,7 @@ import { ExpenseEditorDialog } from './components/ExpenseEditorDialog'
 import { GalaCard } from './components/GalaCard'
 import { GalaDetails } from './components/GalaDetails'
 import { MonthCalendar } from './components/MonthCalendar'
+import { ProfileDialog } from './components/ProfileDialog'
 import { SignatureDialog } from './components/SignatureDialog'
 import { CURRENT_USER_ID, mockCircles } from './data/mockCircles'
 import { useBodyScrollLock } from './hooks/useBodyScrollLock'
@@ -15,7 +16,34 @@ import type { Circle, Expense, Gala, GalaRecap, NewGalaInput, RSVP, RSVPStatus }
 import './App.css'
 
 const STORAGE_KEY = 'galaan-demo-v3'
+const PROFILE_STORAGE_KEY = 'galaan-profile-v1'
+const THEME_STORAGE_KEY = 'galaan-theme-v1'
 const INITIAL_MONTH = new Date(2026, 10, 1)
+
+type ThemeMode = 'light' | 'dark'
+
+function initialsFor(name: string) {
+  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'Y'
+}
+
+function readSavedName() {
+  try {
+    const value = localStorage.getItem(PROFILE_STORAGE_KEY)
+    return value && value.trim() ? value : 'You'
+  } catch {
+    return 'You'
+  }
+}
+
+function readSavedTheme(): ThemeMode {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY)
+    if (saved === 'light' || saved === 'dark') return saved
+  } catch {
+    // Fall through to the operating system preference.
+  }
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
 
 function readSavedCircles(): Circle[] {
   try {
@@ -53,6 +81,10 @@ function App() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isSignatureOpen, setIsSignatureOpen] = useState(false)
   const [isCircleHubOpen, setIsCircleHubOpen] = useState(false)
+  const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [displayName, setDisplayName] = useState(readSavedName)
+  const [theme, setTheme] = useState<ThemeMode>(readSavedTheme)
+  const [editingGalaId, setEditingGalaId] = useState<string | null>(null)
   const [signatureGalaId, setSignatureGalaId] = useState<string | null>(null)
   const [expenseEditor, setExpenseEditor] = useState<{ galaId: string; expense?: Expense } | null>(null)
   const [statusFilter, setStatusFilter] = useState<'all' | 'drawing' | 'color'>('all')
@@ -65,6 +97,22 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(circles))
   }, [circles])
+
+  useEffect(() => {
+    localStorage.setItem(PROFILE_STORAGE_KEY, displayName)
+  }, [displayName])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    document.documentElement.style.colorScheme = theme
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme)
+    } catch {
+      // The theme remains usable for this session when storage is unavailable.
+    }
+    const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    if (themeMeta) themeMeta.content = theme === 'dark' ? '#171b19' : '#f4efe5'
+  }, [theme])
 
   const activeCircle = circles.find((circle) => circle.id === activeCircleId) ?? circles[0]
   const selectedGala = activeCircle.galas.find((gala) => gala.id === selectedGalaId) ?? null
@@ -145,7 +193,22 @@ function App() {
     updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id === galaId ? { ...gala, recap } : gala) }))
   }
 
-  function createGala(input: NewGalaInput) {
+  function saveGala(input: NewGalaInput) {
+    if (editingGalaId) {
+      updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== editingGalaId ? gala : {
+        ...gala,
+        ...input,
+        expenses: input.expenses.map((draft) => {
+          const existing = gala.expenses.find((expense) => expense.label.toLowerCase() === draft.label.toLowerCase() && expense.category === draft.category)
+          return existing ? { ...existing, ...draft } : { ...draft, id: `expense-${crypto.randomUUID()}`, paidMemberIds: [] }
+        }),
+      }) }))
+      setIsCreateOpen(false)
+      setEditingGalaId(null)
+      setMonth(new Date(Number(input.date.slice(0, 4)), Number(input.date.slice(5, 7)) - 1, 1))
+      setSelectedDate(input.date)
+      return
+    }
     const newGala: Gala = {
       ...input,
       id: `gala-${crypto.randomUUID()}`,
@@ -158,6 +221,48 @@ function App() {
     setSelectedDate(input.date)
     setIsCreateOpen(false)
     setSelectedGalaId(newGala.id)
+  }
+
+  function deleteGala(galaId: string) {
+    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.filter((gala) => gala.id !== galaId) }))
+    setSelectedGalaId(null)
+  }
+
+  function leaveCircle(circleId: string) {
+    if (circles.length <= 1) return
+    const circle = circles.find((item) => item.id === circleId)
+    if (!circle || !window.confirm(`Leave ${circle.name}? It will disappear from your circle switcher.`)) return
+    const remaining = circles.filter((item) => item.id !== circleId)
+    setCircles(remaining)
+    if (activeCircleId === circleId) {
+      setActiveCircleId(remaining[0].id)
+      setMonth(INITIAL_MONTH)
+      setSelectedDate(null)
+      setSelectedGalaId(null)
+    }
+    setIsCircleHubOpen(false)
+  }
+
+  function saveProfileName(name: string) {
+    const cleaned = name.trim()
+    const initials = initialsFor(cleaned)
+    setDisplayName(cleaned)
+    setCircles((current) => current.map((circle) => ({
+      ...circle,
+      members: circle.members.map((member) => member.id === CURRENT_USER_ID ? { ...member, name: cleaned, initials } : member),
+    })))
+  }
+
+  function resetDemoData() {
+    if (!window.confirm('Reset all circles, RSVPs, recaps, expenses, and your profile to the original sample data?')) return
+    setCircles(mockCircles)
+    setDisplayName('You')
+    setActiveCircleId('college')
+    setMonth(INITIAL_MONTH)
+    setSelectedDate(null)
+    setSelectedGalaId(null)
+    setStatusFilter('all')
+    setIsProfileOpen(false)
   }
 
   function switchCircle(circleId: string) {
@@ -192,8 +297,8 @@ function App() {
         <div className="topbar-context">
           <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} />
           <button className="invite-trigger" type="button" onClick={() => setIsCircleHubOpen(true)}><UsersRound size={14} /><span>Members</span></button>
-          <span className="saved-label"><span className="saved-dot" /> Saved on this device</span>
         </div>
+        <button className="profile-trigger" type="button" aria-label="Open profile" onClick={() => setIsProfileOpen(true)}><span>{initialsFor(displayName)}</span><span className="profile-trigger-name">{displayName}</span><UserRound className="profile-trigger-icon" size={14} /></button>
         <button className="top-create-button" type="button" aria-label="Plan a gala" onClick={() => setIsCreateOpen(true)}><Plus size={17} strokeWidth={2.3} /><span>Plan a gala</span></button>
       </header>
 
@@ -227,7 +332,7 @@ function App() {
           <aside className="detail-column" aria-label="Selected gala details">
             {selectedGala ? <>
               <button className="detail-mobile-scrim" type="button" aria-label="Close gala details" onClick={() => setSelectedGalaId(null)} />
-              <GalaDetails key={selectedGala.id} gala={selectedGala} members={activeCircle.members} isPast={selectedGala.date < todayKey} onSign={() => { setSignatureGalaId(selectedGala.id); setIsSignatureOpen(true) }} onSetRsvp={chooseRsvp} onTogglePaid={(expenseId, memberId) => togglePaid(selectedGala.id, expenseId, memberId)} onAddExpense={() => setExpenseEditor({ galaId: selectedGala.id })} onEditExpense={(expense) => setExpenseEditor({ galaId: selectedGala.id, expense })} onDeleteExpense={(expenseId) => { if (window.confirm('Remove this expense from the split?')) deleteExpense(selectedGala.id, expenseId) }} onSaveRecap={(recap) => saveRecap(selectedGala.id, recap)} onClose={() => setSelectedGalaId(null)} />
+              <GalaDetails key={selectedGala.id} gala={selectedGala} members={activeCircle.members} isPast={selectedGala.date < todayKey} onSign={() => { setSignatureGalaId(selectedGala.id); setIsSignatureOpen(true) }} onSetRsvp={chooseRsvp} onTogglePaid={(expenseId, memberId) => togglePaid(selectedGala.id, expenseId, memberId)} onAddExpense={() => setExpenseEditor({ galaId: selectedGala.id })} onEditExpense={(expense) => setExpenseEditor({ galaId: selectedGala.id, expense })} onDeleteExpense={(expenseId) => { if (window.confirm('Remove this expense from the split?')) deleteExpense(selectedGala.id, expenseId) }} onSaveRecap={(recap) => saveRecap(selectedGala.id, recap)} onEdit={() => { setEditingGalaId(selectedGala.id); setIsCreateOpen(true) }} onDelete={() => { if (window.confirm(`Delete “${selectedGala.title}” from this circle?`)) deleteGala(selectedGala.id) }} onClose={() => setSelectedGalaId(null)} />
             </> : (
               <div className="circle-note-panel"><div className="note-scribble"><Sparkles size={20} /></div><h2>Plans are better together.</h2><p>Pick a date or a gala to see who’s in, where you’re headed, and how much to ambag.</p><div className="note-illustration" aria-hidden="true"><span className="note-stamp"><PartyPopper size={22} /></span><span className="note-line note-line-one" /><span className="note-line note-line-two" /><span className="note-sun" /></div><div className="circle-note-foot"><MapPin size={14} /><span>For your {activeCircle.name.toLowerCase()}</span></div></div>
             )}
@@ -238,9 +343,10 @@ function App() {
 
       <button className="mobile-fab" type="button" onClick={() => setIsCreateOpen(true)} aria-label="Plan a gala"><CirclePlus size={22} /><span>Plan a gala</span></button>
       <AnimatePresence>
-        {isCreateOpen && <CreateGalaDialog onClose={() => setIsCreateOpen(false)} onCreate={createGala} transition={dialogTransition} />}
+        {isCreateOpen && <CreateGalaDialog key={editingGalaId ?? 'new-gala'} initial={activeCircle.galas.find((gala) => gala.id === editingGalaId)} onClose={() => { setIsCreateOpen(false); setEditingGalaId(null) }} onCreate={saveGala} transition={dialogTransition} />}
         {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}
-        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
+        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={circles.length > 1} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
+        {isProfileOpen && <ProfileDialog displayName={displayName} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
         {expenseEditor && <ExpenseEditorDialog key={`${expenseEditor.galaId}-${expenseEditor.expense?.id ?? 'new'}`} initial={expenseEditor.expense} onClose={() => setExpenseEditor(null)} onSave={(expense) => saveExpense(expenseEditor.galaId, expense, expenseEditor.expense?.id)} transition={dialogTransition} />}
       </AnimatePresence>
       <AnimatePresence>{savedNotice && <motion.div className="saved-toast" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={{ duration: 0.18 }}><span className="toast-check">✓</span> Pirma saved. You’re on the list.</motion.div>}</AnimatePresence>

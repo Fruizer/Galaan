@@ -3,7 +3,7 @@
 :root {
   font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
   color: #302c30;
-  background: #f4efe5;
+  background: var(--page-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -13,11 +13,18 @@
   font-weight: 400;
   --paper: #fbf8f0;
   --paper-deep: #eee5d5;
+  --page-bg: #f4efe5;
+  --surface-raised: #fffdf7;
+  --surface-soft: #f2ecdf;
+  --surface-inset: #f1ecdf;
+  --text-secondary: #514c46;
+  --text-muted: #77736c;
+  --line-subtle: #e7dfd2;
   --ink: #302c30;
   --muted: #77736c;
   --line: #ded6c8;
-  --tomato: #d75b42;
-  --tomato-dark: #af4133;
+  --tomato: #bf4a36;
+  --tomato-dark: #a93c2c;
   --sunshine: #e9c449;
   --leaf: #5b7258;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -26,12 +33,31 @@
 }
 
 * { box-sizing: border-box; }
-html { min-width: 0; background: #f4efe5; scroll-behavior: smooth; }
-body { min-width: 0; min-height: 100vh; margin: 0; background: #f4efe5; }
+html { min-width: 0; color-scheme: light; background: var(--page-bg); scroll-behavior: smooth; }
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --page-bg: #171b19;
+  --paper: #202622;
+  --paper-deep: #2d352f;
+  --surface-raised: #292f2b;
+  --surface-soft: #2a302b;
+  --surface-inset: #252b27;
+  --ink: #f2efe7;
+  --text-secondary: #d5d0c6;
+  --text-muted: #b4b0a6;
+  --muted: #b4b0a6;
+  --line: #424b44;
+  --line-subtle: #353d37;
+  --tomato: #bf4a36;
+  --tomato-dark: #a93c2c;
+  --leaf: #a2bd91;
+}
+body { min-width: 0; min-height: 100vh; margin: 0; color: var(--ink); background: var(--page-bg); }
 button, input, textarea, select { font: inherit; }
 button { color: inherit; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #b95a3c; outline-offset: 3px; }
 ::selection { color: #fffaf0; background: #b64e3c; }
+html[data-theme="dark"] ::selection { color: #fffaf0; background: #a74835; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

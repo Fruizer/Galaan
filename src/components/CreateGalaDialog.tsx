@@ -1,29 +1,30 @@
 import { useState, type FormEvent } from 'react'
 import { Minus, Plus, Trash2 } from 'lucide-react'
-import type { NewGalaInput, VibeTag } from '../types'
+import type { Gala, NewGalaInput, VibeTag } from '../types'
 import { ModalFrame } from './ModalFrame'
 
 interface CreateGalaDialogProps {
   onClose: () => void
   onCreate: (input: NewGalaInput) => void
   transition: object
+  initial?: Gala
 }
 
 const vibes: VibeTag[] = ['Food Trip', 'Roadtrip', 'Tambay', 'Beach Day', 'Coffee Run', 'Birthday']
 const categories: NewGalaInput['expenses'][number]['category'][] = ['food', 'stay', 'transpo', 'other']
 interface ExpenseDraft { label: string; amount: string; category: NewGalaInput['expenses'][number]['category'] }
 
-export function CreateGalaDialog({ onClose, onCreate, transition }: CreateGalaDialogProps) {
-  const [title, setTitle] = useState('')
-  const [vibe, setVibe] = useState<VibeTag>('Tambay')
-  const [date, setDate] = useState('2026-11-29')
-  const [callTime, setCallTime] = useState('6:00 PM')
-  const [gcTime, setGcTime] = useState('6:30 PM')
-  const [venue, setVenue] = useState('')
-  const [address, setAddress] = useState('')
-  const [notes, setNotes] = useState('')
-  const [quorum, setQuorum] = useState(4)
-  const [expenses, setExpenses] = useState<ExpenseDraft[]>([{ label: '', amount: '', category: 'food' }])
+export function CreateGalaDialog({ onClose, onCreate, transition, initial }: CreateGalaDialogProps) {
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [vibe, setVibe] = useState<VibeTag>(initial?.vibe ?? 'Tambay')
+  const [date, setDate] = useState(initial?.date ?? '2026-11-29')
+  const [callTime, setCallTime] = useState(initial?.callTime ?? '6:00 PM')
+  const [gcTime, setGcTime] = useState(initial?.gcTime ?? '6:30 PM')
+  const [venue, setVenue] = useState(initial?.venue ?? '')
+  const [address, setAddress] = useState(initial?.address ?? '')
+  const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [quorum, setQuorum] = useState(initial?.quorum ?? 4)
+  const [expenses, setExpenses] = useState<ExpenseDraft[]>(initial?.expenses.length ? initial.expenses.map(({ label, amount, category }) => ({ label, amount: String(amount), category })) : [{ label: '', amount: '', category: 'food' }])
   const [error, setError] = useState('')
 
   function changeExpense(index: number, field: keyof ExpenseDraft, value: string) {
@@ -40,7 +41,7 @@ export function CreateGalaDialog({ onClose, onCreate, transition }: CreateGalaDi
     onCreate({ title: title.trim(), vibe, date, callTime, gcTime, venue: venue.trim(), address: address.trim() || venue.trim(), notes: notes.trim(), quorum, expenses: validExpenses })
   }
 
-  return <ModalFrame title="Plan a new gala" subtitle="Get the basics down. The barkada can take it from here." onClose={onClose} transition={transition} className="create-dialog">
+  return <ModalFrame title={initial ? 'Edit gala plan' : 'Plan a new gala'} subtitle={initial ? 'Update the details so everyone stays on the same page.' : 'Get the basics down. The barkada can take it from here.'} onClose={onClose} transition={transition} className="create-dialog">
     <form className="create-form" onSubmit={submit} noValidate>
       <label className="field-label">What are we doing?<input autoFocus value={title} onChange={(event) => { setTitle(event.target.value); setError('') }} placeholder="e.g. Saturday seafood run" maxLength={80} /></label>
       <fieldset className="vibe-fieldset"><legend className="field-label">Pick the vibe</legend><div className="vibe-options">{vibes.map((option) => <button key={option} type="button" className={`vibe-choice${vibe === option ? ' active' : ''}`} aria-pressed={vibe === option} onClick={() => setVibe(option)}>{option}</button>)}</div></fieldset>
@@ -62,7 +63,7 @@ export function CreateGalaDialog({ onClose, onCreate, transition }: CreateGalaDi
         </div>)}
       </div>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <div className="form-bottom"><span>New galas start as <strong>Drawing</strong>.</span><button className="primary-button" type="submit">Add to the calendar</button></div>
+      <div className="form-bottom"><span>{initial ? 'Your RSVP and payments stay with this gala.' : <>New galas start as <strong>Drawing</strong>.</>}</span><button className="primary-button" type="submit">{initial ? 'Save changes' : 'Add to the calendar'}</button></div>
     </form>
   </ModalFrame>
 }

@@ -41,7 +41,7 @@ export function GalaCard({ gala, members, selected, onOpen, onSign, isPast = fal
       </button>
       <div className="gala-card-footer">
         <div className="rsvp-progress" aria-label={`${going.length} of ${gala.quorum} going`}>
-          <div className="mini-avatars">{rsvpMembers.map(({ member, rsvp }) => <span key={member!.id} className="mini-avatar" title={`${member!.name}${rsvp.signature ? ' · signed' : ''}`} style={{ backgroundColor: member!.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : member!.initials.slice(0, 1)}</span>)}</div>
+          <div className="mini-avatars">{rsvpMembers.map(({ member, rsvp }) => <span key={member!.id} className="mini-avatar" title={`${member!.name}${rsvp.signature ? ' · signed' : ''}`} style={{ backgroundColor: member!.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : member!.avatarUrl ? <img src={member!.avatarUrl} alt="" /> : member!.initials.slice(0, 1)}</span>)}</div>
           <span className="going-count"><UsersRound size={13} /><strong>{going.length}</strong><span>/{gala.quorum} going</span></span>
           <span className="progress-track"><i style={{ transform: `scaleX(${Math.min(1, going.length / gala.quorum)})` }} /></span>
         </div>

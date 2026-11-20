@@ -58,6 +58,12 @@ export async function loadCircles(client: SupabaseClient, userId: string): Promi
     : { data: [], error: null }
   errorOrThrow(profileResult.error)
   const profiles = (profileResult.data ?? []) as unknown as Row[]
+  const avatarPaths = [...new Set(profiles.map((row) => row.avatar_url).filter((value): value is string => typeof value === 'string' && /^[0-9a-f-]{36}\/avatar\.webp$/.test(value)))]
+  const avatarResult = avatarPaths.length
+    ? await client.storage.from('profile-avatars').createSignedUrls(avatarPaths, 3600)
+    : { data: [], error: null }
+  errorOrThrow(avatarResult.error)
+  const avatarByPath = new Map((avatarResult.data ?? []).map((avatar) => [avatar.path, avatar.signedUrl]))
   const galas = (galaResult.data ?? []) as unknown as Row[]
   const galaIds = galas.map((row) => String(row.id))
 
@@ -97,6 +103,7 @@ export async function loadCircles(client: SupabaseClient, userId: string): Promi
         name,
         initials: initialsFor(name),
         color: colorFor(userIdValue),
+        ...(typeof profile?.avatar_url === 'string' && avatarByPath.get(profile.avatar_url) ? { avatarUrl: avatarByPath.get(profile.avatar_url) } : {}),
         isYou: userIdValue === userId,
         role: membership.role === 'organizer' ? 'organizer' : 'member',
       }
@@ -184,6 +191,39 @@ export async function leaveCircle(client: SupabaseClient, circleId: string) {
 export async function updateProfile(client: SupabaseClient, userId: string, displayName: string) {
   const { error } = await client.from('profiles').update({ display_name: displayName.trim() }).eq('id', userId)
   errorOrThrow(error)
+}
+
+export async function updateProfileAvatar(client: SupabaseClient, userId: string, file: File) {
+  if (!file.type.startsWith('image/')) throw new Error('Choose an image file to use as your profile picture.')
+  if (file.size > 8 * 1024 * 1024) throw new Error('Choose an image smaller than 8 MB.')
+  const sourceUrl = URL.createObjectURL(file)
+  try {
+    const image = new Image()
+    image.src = sourceUrl
+    await image.decode()
+    const scale = Math.min(1, 640 / Math.max(image.naturalWidth, image.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('This image could not be processed. Try another one.')
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    let blob: Blob | null = null
+    for (const quality of [0.84, 0.72, 0.6, 0.48]) {
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', quality))
+      if (blob && blob.size <= 480 * 1024) break
+    }
+    if (!blob || blob.size > 480 * 1024) throw new Error('This image is too detailed to save. Choose another photo.')
+    const path = `${userId}/avatar.webp`
+    const { error: uploadError } = await client.storage.from('profile-avatars').upload(path, blob, {
+      cacheControl: '3600', contentType: 'image/webp', upsert: true,
+    })
+    errorOrThrow(uploadError)
+    const { error: profileError } = await client.from('profiles').update({ avatar_url: path }).eq('id', userId)
+    errorOrThrow(profileError)
+  } finally {
+    URL.revokeObjectURL(sourceUrl)
+  }
 }
 
 function galaValues(circleId: string, userId: string, input: NewGalaInput, includeCreator = true) {

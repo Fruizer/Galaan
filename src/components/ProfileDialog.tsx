@@ -1,11 +1,13 @@
-import { useMemo, useState, type FormEvent } from 'react'
-import { CalendarDays, Moon, RotateCcw, Sun, UserRound } from 'lucide-react'
+import { useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { CalendarDays, Moon, Pencil, RotateCcw, Sun, UserRound } from 'lucide-react'
 import { ModalFrame } from './ModalFrame'
 import type { Circle } from '../types'
 
 interface ProfileDialogProps {
   displayName: string
   currentUserId: string
+  avatarUrl?: string
+  onChangeAvatar: (file: File) => Promise<void>
   circles: Circle[]
   theme: 'light' | 'dark'
   onThemeChange: (theme: 'light' | 'dark') => void
@@ -21,9 +23,12 @@ function initialsFor(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'Y'
 }
 
-export function ProfileDialog({ displayName, currentUserId, circles, theme, onThemeChange, onSaveName, onResetDemo, email, onSignOut, onClose, transition }: ProfileDialogProps) {
+export function ProfileDialog({ displayName, currentUserId, avatarUrl, onChangeAvatar, circles, theme, onThemeChange, onSaveName, onResetDemo, email, onSignOut, onClose, transition }: ProfileDialogProps) {
   const [name, setName] = useState(displayName)
   const [error, setError] = useState('')
+  const [avatarError, setAvatarError] = useState('')
+  const [avatarBusy, setAvatarBusy] = useState(false)
+  const avatarInput = useRef<HTMLInputElement>(null)
   const [today] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
@@ -43,8 +48,23 @@ export function ProfileDialog({ displayName, currentUserId, circles, theme, onTh
     setError('')
   }
 
+  async function selectAvatar(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+    setAvatarError('')
+    setAvatarBusy(true)
+    try {
+      await onChangeAvatar(file)
+    } catch (uploadError) {
+      setAvatarError(uploadError instanceof Error ? uploadError.message : 'Could not save that photo. Try again.')
+    } finally {
+      setAvatarBusy(false)
+    }
+  }
+
   return <ModalFrame title="Your profile" subtitle="A little corner for you in the barkada." onClose={onClose} transition={transition} className="profile-dialog">
-    <div className="profile-identity"><span className="profile-avatar">{initialsFor(displayName)}</span><div><strong>{displayName}</strong><span>{email ?? 'Galaan demo profile'}</span></div></div>
+    <div className="profile-identity"><div className="profile-avatar-wrap"><span className="profile-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : initialsFor(displayName)}</span><button className="profile-avatar-edit" type="button" aria-label="Change profile picture" title="Change profile picture" disabled={avatarBusy} onClick={() => avatarInput.current?.click()}><Pencil size={14} /><span>{avatarBusy ? 'Saving' : 'Edit'}</span></button><input ref={avatarInput} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={(event) => { void selectAvatar(event) }} /></div><div><strong>{displayName}</strong><span>{email ?? 'Galaan demo profile'}</span>{avatarError && <span className="profile-avatar-error" role="alert">{avatarError}</span>}</div></div>
     <form className="profile-name-form" onSubmit={submit}>
       <label className="field-label">Display name<input maxLength={36} value={name} onChange={(event) => { setName(event.target.value); setError('') }} /></label>
       {error && <p className="form-error" role="alert">{error}</p>}

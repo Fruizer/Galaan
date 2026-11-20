@@ -40,11 +40,11 @@ export function CircleHubDialog({ circle, canLeave, onCreateInvite, onLeave, onC
       <div className="invite-card-copy"><strong>Bring the barkada in</strong><span>Make a private link that expires in 7 days.</span></div>
       <button className="primary-button invite-copy-button" type="button" disabled={working} onClick={copyInvite}>{copied ? <Check size={15} /> : <Copy size={15} />}{working ? 'Making link…' : copied ? 'Copied' : 'Copy link'}</button>
     </div>
-    <p className="demo-caption">Friends sign in with Google before joining.{copyError && inviteUrl ? ' Select the link to copy it manually.' : copyError ? ' Could not create the invite. Check your connection and try again.' : ''}</p>
+    <p className="demo-caption">Friends need to sign in before joining.{copyError && inviteUrl ? ' Select the link to copy it manually.' : copyError ? ' Could not create the invite. Check your connection and try again.' : ''}</p>
     {copyError && inviteUrl && <input className="invite-link-fallback" aria-label="Circle invite link" readOnly value={inviteUrl} onFocus={(event) => event.currentTarget.select()} />}
     <div className="circle-members-heading"><span><UsersRound size={15} /> Circle members</span><strong>{circle.members.length}</strong></div>
     <div className="circle-member-list">{circle.members.map((member) => <div className="circle-member-row" key={`${circle.id}-${member.id}`}>
-      <i style={{ backgroundColor: member.color }}>{member.initials}</i>
+      <i style={{ backgroundColor: member.color }}>{member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.initials}</i>
       <span><strong>{member.name}</strong><small>{member.isYou ? 'You' : 'Barkada member'}</small></span>
       {member.role === 'organizer' && <span className="member-role-badge">Organizer</span>}
     </div>)}</div>

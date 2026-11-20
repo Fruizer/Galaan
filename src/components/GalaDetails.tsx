@@ -107,7 +107,7 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
       <div className="detail-going-list">{gala.rsvps.filter((rsvp) => rsvp.status === 'going').map((rsvp) => {
         const member = members.find((item) => item.id === rsvp.memberId)
         if (!member) return null
-        return <span className={`going-person${rsvp.signature ? ' has-signature' : ''}`} key={rsvp.memberId}><i style={{ backgroundColor: member.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : member.initials.slice(0, 1)}</i>{member.isYou ? 'You' : member.name.split(' ')[0]}</span>
+        return <span className={`going-person${rsvp.signature ? ' has-signature' : ''}`} key={rsvp.memberId}><i style={{ backgroundColor: member.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.initials.slice(0, 1)}</i>{member.isYou ? 'You' : member.name.split(' ')[0]}</span>
       })}</div>
       <div className="rsvp-choice-group" role="group" aria-label="Your RSVP">
         <button className={`rsvp-choice going-choice${ownRsvp?.status === 'going' ? ' selected' : ''}`} type="button" aria-pressed={ownRsvp?.status === 'going'} onClick={onSign}><PenLine size={14} /><span>Going</span>{ownRsvp?.status === 'going' && <Check size={13} />}</button>
@@ -153,7 +153,7 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
             const member = members.find((item) => item.id === rsvp.memberId)
             if (!member) return null
             const paid = expense.paidMemberIds.includes(member.id)
-            return <button key={member.id} className={`paid-person${paid ? ' paid' : ''}`} type="button" title={`${member.isYou ? 'You' : member.name}: ${paid ? 'Paid' : 'Unpaid'}. Toggle status`} aria-label={`Toggle ${member.isYou ? 'your' : `${member.name}’s`} payment status, currently ${paid ? 'paid' : 'unpaid'}`} onClick={() => onTogglePaid(expense.id, member.id)}><i style={{ backgroundColor: member.color }}>{paid ? <Check size={10} /> : member.initials.slice(0, 1)}</i><span>{member.isYou ? 'You' : member.name.split(' ')[0]}</span></button>
+            return <button key={member.id} className={`paid-person${paid ? ' paid' : ''}`} type="button" title={`${member.isYou ? 'You' : member.name}: ${paid ? 'Paid' : 'Unpaid'}. Toggle status`} aria-label={`Toggle ${member.isYou ? 'your' : `${member.name}’s`} payment status, currently ${paid ? 'paid' : 'unpaid'}`} onClick={() => onTogglePaid(expense.id, member.id)}><i style={{ backgroundColor: member.color }}>{paid ? <Check size={10} /> : member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.initials.slice(0, 1)}</i><span>{member.isYou ? 'You' : member.name.split(' ')[0]}</span></button>
           })}</div>
         </div>
       })}</div>

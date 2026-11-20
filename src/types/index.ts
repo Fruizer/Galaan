@@ -13,6 +13,7 @@ export interface Member {
   name: string
   initials: string
   color: string
+  avatarUrl?: string
   isYou?: boolean
   role?: 'organizer' | 'member'
 }

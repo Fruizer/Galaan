@@ -12,7 +12,7 @@ import { ProfileDialog } from './components/ProfileDialog'
 import { SignatureDialog } from './components/SignatureDialog'
 import { FirstCircleScreen, SignInScreen } from './components/AccountScreens'
 import { useBodyScrollLock } from './hooks/useBodyScrollLock'
-import { createCircle, createCircleInvite, deleteExpense as deleteExpenseRow, deleteGala as deleteGalaRow, leaveCircle as leaveCircleRow, loadCircles, redeemCircleInvite, saveExpense as saveExpenseRow, saveGala as saveGalaRow, saveRecap as saveRecapRow, setPayment, updateProfile, upsertRsvp } from './lib/galaanData'
+import { createCircle, createCircleInvite, deleteExpense as deleteExpenseRow, deleteGala as deleteGalaRow, leaveCircle as leaveCircleRow, loadCircles, redeemCircleInvite, saveExpense as saveExpenseRow, saveGala as saveGalaRow, saveRecap as saveRecapRow, setPayment, updateProfile, updateProfileAvatar, upsertRsvp } from './lib/galaanData'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { Circle, Expense, Gala, GalaRecap, NewGalaInput, RSVPStatus } from './types'
 import type { Session } from '@supabase/supabase-js'
@@ -107,6 +107,9 @@ function App() {
   const [savedNotice, setSavedNotice] = useState(false)
   const [todayKey] = useState(() => getDateKey(new Date()))
   const reduceMotion = useReducedMotion()
+  const sessionUserId = session?.user.id
+  const sessionName = session?.user.user_metadata.full_name ?? session?.user.user_metadata.name
+  const sessionEmail = session?.user.email
 
   useBodyScrollLock(Boolean(selectedGalaId), '(max-width: 720px)')
 
@@ -127,7 +130,8 @@ function App() {
 
   useEffect(() => {
     const client = supabase
-    if (!session || !client) { setCircles([]); setDataLoaded(Boolean(authLoaded)); return }
+    if (!sessionUserId || !client) { setCircles([]); setDataLoaded(Boolean(authLoaded)); return }
+    const currentUserId = sessionUserId
     let cancelled = false
     let refreshTimer: number | undefined
     setDataLoaded(false)
@@ -135,16 +139,15 @@ function App() {
     async function refresh() {
       try {
         const [nextCircles, profileResult] = await Promise.all([
-          loadCircles(client!, session!.user.id),
-          client!.from('profiles').select('display_name').eq('id', session!.user.id).maybeSingle(),
+          loadCircles(client!, currentUserId),
+          client!.from('profiles').select('display_name').eq('id', currentUserId).maybeSingle(),
         ])
         if (profileResult.error) throw new Error(profileResult.error.message)
         if (cancelled) return
         setCircles(nextCircles)
         setActiveCircleId((current) => nextCircles.some((circle) => circle.id === current) ? current : nextCircles[0]?.id ?? '')
         const profile = profileResult.data as { display_name?: string } | null
-        const metadataName = session!.user.user_metadata.full_name ?? session!.user.user_metadata.name
-        setDisplayName(profile?.display_name ?? (typeof metadataName === 'string' ? metadataName : session!.user.email?.split('@')[0] ?? 'You'))
+        setDisplayName(profile?.display_name ?? (typeof sessionName === 'string' ? sessionName : sessionEmail?.split('@')[0] ?? 'You'))
         setDataLoaded(true)
       } catch (error) {
         if (cancelled) return
@@ -153,7 +156,7 @@ function App() {
       }
     }
     void refresh()
-    const channel = client.channel(`galaan-live-${session.user.id}`)
+    const channel = client.channel(`galaan-live-${currentUserId}`)
     for (const table of ['circles', 'circle_memberships', 'profiles', 'galas', 'rsvps', 'expenses', 'expense_payments', 'gala_albums']) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
         if (refreshTimer) window.clearTimeout(refreshTimer)
@@ -166,7 +169,7 @@ function App() {
       if (refreshTimer) window.clearTimeout(refreshTimer)
       void client.removeChannel(channel)
     }
-  }, [session, authLoaded])
+  }, [sessionUserId, sessionName, sessionEmail, authLoaded])
 
   useEffect(() => {
     if (!session || !supabase) return
@@ -209,6 +212,7 @@ function App() {
   }, [theme])
 
   const activeCircle = circles.find((circle) => circle.id === activeCircleId) ?? circles[0] ?? EMPTY_CIRCLE
+  const currentMember = activeCircle.members.find((member) => member.id === session?.user.id)
   const selectedGala = activeCircle.galas.find((gala) => gala.id === selectedGalaId) ?? null
   const signatureGala = activeCircle.galas.find((gala) => gala.id === signatureGalaId) ?? null
   const currentMonthKey = getMonthKey(month)
@@ -332,6 +336,12 @@ function App() {
     })
   }
 
+  async function changeProfileAvatar(file: File) {
+    if (!supabase || !session) throw new Error('Sign in again before changing your picture.')
+    await updateProfileAvatar(supabase, session.user.id, file)
+    await refreshCircles()
+  }
+
   async function createNewCircle() {
     const name = window.prompt('What should this circle be called?')
     if (!name || name.trim().length < 2) return
@@ -344,12 +354,21 @@ function App() {
     }
   }
 
-  async function signInWithGoogle() {
+  async function authenticateWithEmail(email: string, password: string, createAccount: boolean) {
     if (!supabase) { setAuthError('Supabase connection settings are missing.'); return }
     setAuthBusy(true)
     setAuthError('')
-    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })
-    if (error) { setAuthError(error.message); setAuthBusy(false) }
+    const result = createAccount
+      ? await supabase.auth.signUp({ email, password })
+      : await supabase.auth.signInWithPassword({ email, password })
+    if (result.error) {
+      setAuthError(result.error.message)
+    } else if (createAccount && !result.data.session) {
+      setAuthError('Supabase still requires email confirmation. Turn off Confirm email under Authentication → Sign In / Providers → Email, then try again. A confirmation email may already have been sent.')
+    } else if (result.data.session) {
+      setSession(result.data.session)
+    }
+    setAuthBusy(false)
   }
 
   async function signOut() {
@@ -389,9 +408,9 @@ function App() {
 
   const dialogTransition = reduceMotion ? { duration: 0.01 } : { type: 'spring' as const, duration: 0.42, bounce: 0.12 }
 
-  if (!isSupabaseConfigured) return <SignInScreen loading={false} invitePending={invitePending} error="Galaan’s Supabase settings are missing. Add the project URL and publishable key to the deployment settings." onGoogleSignIn={() => {}} />
+  if (!isSupabaseConfigured) return <SignInScreen loading={false} invitePending={invitePending} error="Galaan’s Supabase settings are missing. Add the project URL and publishable key to the deployment settings." onEmailAuth={() => {}} />
   if (!authLoaded || !dataLoaded || (session && invitePending)) return <main className="account-screen"><section className="account-card"><a className="brand-lockup account-brand" href="#home"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span></a><h1>{authLoaded ? 'Getting your circles ready…' : 'Opening your barkada space…'}</h1><p>Loading your private plans and RSVPs.</p></section></main>
-  if (!session) return <SignInScreen loading={authBusy} error={authError} invitePending={invitePending} onGoogleSignIn={() => { void signInWithGoogle() }} />
+  if (!session) return <SignInScreen loading={authBusy} error={authError} invitePending={invitePending} onEmailAuth={(email, password, createAccount) => { void authenticateWithEmail(email, password, createAccount) }} />
   if (dataError) return <main className="account-screen"><section className="account-card"><h1>We couldn’t load your circles.</h1><p>{dataError}</p><button className="primary-button" type="button" onClick={() => window.location.reload()}>Try again</button><button className="account-signout" type="button" onClick={() => { void signOut() }}>Sign out</button></section></main>
   if (circles.length === 0) return <FirstCircleScreen loading={false} error={actionError} onCreate={(name) => { void (async () => { try { const circleId = await createCircle(supabase!, name); await refreshCircles(circleId); setActionError('') } catch (error) { setActionError(error instanceof Error ? error.message : 'Could not create that circle.') } })() }} onSignOut={() => { void signOut() }} />
 
@@ -405,7 +424,7 @@ function App() {
           <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} onCreate={() => { void createNewCircle() }} />
           <button className="invite-trigger" type="button" onClick={() => setIsCircleHubOpen(true)}><UsersRound size={14} /><span>Members</span></button>
         </div>
-        <button className="profile-trigger" type="button" aria-label="Open profile" onClick={() => setIsProfileOpen(true)}><span>{initialsFor(displayName)}</span><span className="profile-trigger-name">{displayName}</span><UserRound className="profile-trigger-icon" size={14} /></button>
+        <button className="profile-trigger" type="button" aria-label="Open profile" onClick={() => setIsProfileOpen(true)}><span className="profile-trigger-avatar">{currentMember?.avatarUrl ? <img src={currentMember.avatarUrl} alt="" /> : initialsFor(displayName)}</span><span className="profile-trigger-name">{displayName}</span><UserRound className="profile-trigger-icon" size={14} /></button>
         <button className="top-create-button" type="button" aria-label="Plan a gala" onClick={() => setIsCreateOpen(true)}><Plus size={17} strokeWidth={2.3} /><span>Plan a gala</span></button>
       </header>
 
@@ -445,7 +464,7 @@ function App() {
             </> : (
               <div className="circle-note-panel"><div className="note-scribble"><Sparkles size={20} /></div><h2>Plans are better together.</h2><p>Pick a date or a gala to see who’s in, where you’re headed, and how much to ambag.</p><div className="note-illustration" aria-hidden="true"><span className="note-stamp"><PartyPopper size={22} /></span><span className="note-line note-line-one" /><span className="note-line note-line-two" /><span className="note-sun" /></div><div className="circle-note-foot"><MapPin size={14} /><span>For your {activeCircle.name.toLowerCase()}</span></div></div>
             )}
-            <div className="member-strip"><div className="member-strip-heading"><span>In the circle</span><button type="button" onClick={() => setIsCircleHubOpen(true)}>{activeCircle.members.length} members · View all</button></div><div className="member-avatars" aria-label={activeCircle.members.map((member) => member.name).join(', ')}>{activeCircle.members.slice(0, 7).map((member) => <span className="member-avatar" key={member.id} title={member.name} style={{ backgroundColor: member.color }}>{member.initials}</span>)}{activeCircle.members.length > 7 && <span className="member-avatar more-members">+{activeCircle.members.length - 7}</span>}</div></div>
+            <div className="member-strip"><div className="member-strip-heading"><span>In the circle</span><button type="button" onClick={() => setIsCircleHubOpen(true)}>{activeCircle.members.length} members · View all</button></div><div className="member-avatars" aria-label={activeCircle.members.map((member) => member.name).join(', ')}>{activeCircle.members.slice(0, 7).map((member) => <span className="member-avatar" key={member.id} title={member.name} style={{ backgroundColor: member.color }}>{member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.initials}</span>)}{activeCircle.members.length > 7 && <span className="member-avatar more-members">+{activeCircle.members.length - 7}</span>}</div></div>
           </aside>
         </div>
       </main>
@@ -454,7 +473,7 @@ function App() {
         {isCreateOpen && <CreateGalaDialog key={editingGalaId ?? 'new-gala'} initial={activeCircle.galas.find((gala) => gala.id === editingGalaId)} onClose={() => { setIsCreateOpen(false); setEditingGalaId(null) }} onCreate={saveGala} transition={dialogTransition} />}
         {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}
         {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={activeCircle.role !== 'organizer' || activeCircle.members.filter((member) => member.role === 'organizer').length > 1} onCreateInvite={createInvite} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
-        {isProfileOpen && <ProfileDialog displayName={displayName} currentUserId={session.user.id} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} email={session.user.email} onSignOut={() => { void signOut() }} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
+        {isProfileOpen && <ProfileDialog displayName={displayName} currentUserId={session.user.id} avatarUrl={activeCircle.members.find((member) => member.id === session.user.id)?.avatarUrl} onChangeAvatar={changeProfileAvatar} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} email={session.user.email} onSignOut={() => { void signOut() }} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
         {expenseEditor && <ExpenseEditorDialog key={`${expenseEditor.galaId}-${expenseEditor.expense?.id ?? 'new'}`} initial={expenseEditor.expense} onClose={() => setExpenseEditor(null)} onSave={(expense) => saveExpense(expenseEditor.galaId, expense, expenseEditor.expense?.id)} transition={dialogTransition} />}
       </AnimatePresence>
       <AnimatePresence>{savedNotice && <motion.div className="saved-toast" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={{ duration: 0.18 }}><span className="toast-check">✓</span> Pirma saved. You’re on the list.</motion.div>}</AnimatePresence>

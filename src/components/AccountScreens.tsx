@@ -1,26 +1,49 @@
 import { useState, type FormEvent } from 'react'
-import { ArrowRight, CalendarDays, CirclePlus, UsersRound } from 'lucide-react'
+import { ArrowRight, CalendarDays, CirclePlus, Mail, UsersRound } from 'lucide-react'
 
 interface SignInScreenProps {
   loading: boolean
   error: string
   invitePending: boolean
-  onGoogleSignIn: () => void
+  onEmailAuth: (email: string, password: string, createAccount: boolean) => void
 }
 
-export function SignInScreen({ loading, error, invitePending, onGoogleSignIn }: SignInScreenProps) {
+export function SignInScreen({ loading, error, invitePending, onEmailAuth }: SignInScreenProps) {
+  const [createAccount, setCreateAccount] = useState(false)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [formError, setFormError] = useState('')
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (password.length < 8) return setFormError('Use a password with at least 8 characters.')
+    if (createAccount && password !== confirmPassword) return setFormError('Those passwords don’t match.')
+    setFormError('')
+    onEmailAuth(email.trim(), password, createAccount)
+  }
+
   return <main className="account-screen">
     <section className="account-card">
       <a className="brand-lockup account-brand" href="#home" aria-label="Galaan"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span></a>
       <div className="account-illustration"><CalendarDays size={24} /><UsersRound size={24} /><span /></div>
       <h1>Make time for your people.</h1>
-      <p>Sign in to see your circles, plan a gala, and keep every RSVP together.</p>
+      <p>Sign in with your email and password to see your circles and keep every RSVP together.</p>
       {invitePending && <div className="invite-pending-note">Your circle invite is ready. Sign in to join it.</div>}
       {error && <div className="account-error" role="alert">{error}</div>}
-      <button className="google-signin-button" type="button" disabled={loading} onClick={onGoogleSignIn}>
-        <span className="google-g" aria-hidden="true">G</span>{loading ? 'Opening Google…' : 'Continue with Google'}<ArrowRight size={16} />
+      {formError && <div className="account-error" role="alert">{formError}</div>}
+      <form className="email-auth-form" onSubmit={submit}>
+        <label htmlFor="auth-email">Email address</label>
+        <input id="auth-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required />
+        <label htmlFor="auth-password">Password</label>
+        <input id="auth-password" type="password" autoComplete={createAccount ? 'new-password' : 'current-password'} minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" required />
+        {createAccount && <><label htmlFor="auth-confirm-password">Confirm password</label><input id="auth-confirm-password" type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Enter it again" required /></>}
+        <button className="primary-button email-auth-submit" type="submit" disabled={loading}><Mail size={15} />{loading ? 'Please wait…' : createAccount ? 'Create account' : 'Sign in'}<ArrowRight size={15} /></button>
+      </form>
+      <button className="auth-mode-toggle" type="button" disabled={loading} onClick={() => { setCreateAccount((current) => !current); setFormError('') }}>
+        {createAccount ? 'Already have an account? Sign in' : 'New to Galaan? Create an account'}
       </button>
-      <small>Your circles are private to their members.</small>
+      <small>For email-free signup, turn off “Confirm email” in Supabase first. Password resets still use email.</small>
     </section>
   </main>
 }

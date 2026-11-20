@@ -11,8 +11,9 @@ import { MonthCalendar } from './components/MonthCalendar'
 import { ProfileDialog } from './components/ProfileDialog'
 import { SignatureDialog } from './components/SignatureDialog'
 import { FirstCircleScreen, SignInScreen } from './components/AccountScreens'
+import { ProfileSetupScreen } from './components/ProfileSetupScreen'
 import { useBodyScrollLock } from './hooks/useBodyScrollLock'
-import { createCircle, createCircleInvite, deleteExpense as deleteExpenseRow, deleteGala as deleteGalaRow, leaveCircle as leaveCircleRow, loadCircles, redeemCircleInvite, saveExpense as saveExpenseRow, saveGala as saveGalaRow, saveRecap as saveRecapRow, setPayment, updateProfile, updateProfileAvatar, upsertRsvp } from './lib/galaanData'
+import { createCircle, createCircleInvite, createJoinCode, redeemJoinCode, deleteExpense as deleteExpenseRow, deleteGala as deleteGalaRow, leaveCircle as leaveCircleRow, loadCircles, redeemCircleInvite, saveExpense as saveExpenseRow, saveGala as saveGalaRow, saveRecap as saveRecapRow, setPayment, updateProfile, updateProfileAvatar, upsertRsvp } from './lib/galaanData'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { Circle, Expense, Gala, GalaRecap, NewGalaInput, RSVPStatus } from './types'
 import type { Session } from '@supabase/supabase-js'
@@ -86,6 +87,9 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [authLoaded, setAuthLoaded] = useState(false)
   const [dataLoaded, setDataLoaded] = useState(false)
+  const [profileReady, setProfileReady] = useState(false)
+  const [circleBusy, setCircleBusy] = useState(false)
+  const [joiningCircle, setJoiningCircle] = useState(false)
   const [authBusy, setAuthBusy] = useState(false)
   const [authError, setAuthError] = useState('')
   const [dataError, setDataError] = useState('')
@@ -130,7 +134,7 @@ function App() {
 
   useEffect(() => {
     const client = supabase
-    if (!sessionUserId || !client) { setCircles([]); setDataLoaded(Boolean(authLoaded)); return }
+    if (!sessionUserId || !client) { setCircles([]); setProfileReady(false); setDataLoaded(Boolean(authLoaded)); return }
     const currentUserId = sessionUserId
     let cancelled = false
     let refreshTimer: number | undefined
@@ -140,13 +144,14 @@ function App() {
       try {
         const [nextCircles, profileResult] = await Promise.all([
           loadCircles(client!, currentUserId),
-          client!.from('profiles').select('display_name').eq('id', currentUserId).maybeSingle(),
+          client!.from('profiles').select('display_name, onboarding_completed').eq('id', currentUserId).maybeSingle(),
         ])
         if (profileResult.error) throw new Error(profileResult.error.message)
         if (cancelled) return
         setCircles(nextCircles)
         setActiveCircleId((current) => nextCircles.some((circle) => circle.id === current) ? current : nextCircles[0]?.id ?? '')
-        const profile = profileResult.data as { display_name?: string } | null
+        const profile = profileResult.data as { display_name?: string; onboarding_completed?: boolean } | null
+        setProfileReady(profile?.onboarding_completed === true)
         setDisplayName(profile?.display_name ?? (typeof sessionName === 'string' ? sessionName : sessionEmail?.split('@')[0] ?? 'You'))
         setDataLoaded(true)
       } catch (error) {
@@ -172,7 +177,7 @@ function App() {
   }, [sessionUserId, sessionName, sessionEmail, authLoaded])
 
   useEffect(() => {
-    if (!session || !supabase) return
+    if (!session || !supabase || !profileReady) return
     let cancelled = false
     async function redeemPendingInvite() {
       let token = ''
@@ -197,7 +202,7 @@ function App() {
     }
     void redeemPendingInvite()
     return () => { cancelled = true }
-  }, [session])
+  }, [sessionUserId, profileReady])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -342,6 +347,27 @@ function App() {
     await refreshCircles()
   }
 
+  async function completeProfile(name: string, photo?: File) {
+    if (!supabase || !session) throw new Error('Sign in again to finish your profile.')
+    if (name.trim().length < 2 || name.trim().length > 36) throw new Error('Use a name between 2 and 36 characters.')
+    if (photo) await updateProfileAvatar(supabase, session.user.id, photo)
+    const { error } = await supabase.from('profiles').update({ display_name: name.trim(), onboarding_completed: true }).eq('id', session.user.id)
+    if (error) throw new Error(error.message)
+    setDisplayName(name.trim())
+    setProfileReady(true)
+  }
+
+  async function createOrJoinCircle(value: string, joining: boolean) {
+    if (!supabase || circleBusy) return
+    setCircleBusy(true); setActionError('')
+    try {
+      const id = joining ? await redeemJoinCode(supabase, value) : await createCircle(supabase, value)
+      await refreshCircles(id)
+      setJoiningCircle(false); setSelectedGalaId(null); setSelectedDate(null)
+    } catch (error) { setActionError(error instanceof Error ? error.message : 'Could not open that circle. Try again.') }
+    finally { setCircleBusy(false) }
+  }
+
   async function createNewCircle() {
     const name = window.prompt('What should this circle be called?')
     if (!name || name.trim().length < 2) return
@@ -409,10 +435,12 @@ function App() {
   const dialogTransition = reduceMotion ? { duration: 0.01 } : { type: 'spring' as const, duration: 0.42, bounce: 0.12 }
 
   if (!isSupabaseConfigured) return <SignInScreen loading={false} invitePending={invitePending} error="Galaan’s Supabase settings are missing. Add the project URL and publishable key to the deployment settings." onEmailAuth={() => {}} />
-  if (!authLoaded || !dataLoaded || (session && invitePending)) return <main className="account-screen"><section className="account-card"><a className="brand-lockup account-brand" href="#home"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span></a><h1>{authLoaded ? 'Getting your circles ready…' : 'Opening your barkada space…'}</h1><p>Loading your private plans and RSVPs.</p></section></main>
+  if (!authLoaded || !dataLoaded || (session && profileReady && invitePending)) return <main className="account-screen"><section className="account-card"><a className="brand-lockup account-brand" href="#home"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span></a><h1>{authLoaded ? 'Getting your circles ready…' : 'Opening your barkada space…'}</h1><p>Loading your private plans and RSVPs.</p></section></main>
   if (!session) return <SignInScreen loading={authBusy} error={authError} invitePending={invitePending} onEmailAuth={(email, password, createAccount) => { void authenticateWithEmail(email, password, createAccount) }} />
   if (dataError) return <main className="account-screen"><section className="account-card"><h1>We couldn’t load your circles.</h1><p>{dataError}</p><button className="primary-button" type="button" onClick={() => window.location.reload()}>Try again</button><button className="account-signout" type="button" onClick={() => { void signOut() }}>Sign out</button></section></main>
-  if (circles.length === 0) return <FirstCircleScreen loading={false} error={actionError} onCreate={(name) => { void (async () => { try { const circleId = await createCircle(supabase!, name); await refreshCircles(circleId); setActionError('') } catch (error) { setActionError(error instanceof Error ? error.message : 'Could not create that circle.') } })() }} onSignOut={() => { void signOut() }} />
+  if (!profileReady) return <ProfileSetupScreen displayName={displayName} onSave={completeProfile} onSignOut={() => { void signOut() }} />
+  if (circles.length === 0 || joiningCircle) return <><FirstCircleScreen startWithJoin={joiningCircle} loading={circleBusy} error={actionError} onCreate={(name) => { void createOrJoinCircle(name, false) }} onJoin={(code) => { void createOrJoinCircle(code, true) }} onSignOut={() => { void signOut() }} />{circles.length > 0 && <button className="return-to-circle" onClick={() => setJoiningCircle(false)}>Back to my circles</button>}</>
+
 
   return (
     <div className="app-shell" style={{ '--circle-color': activeCircle.color } as React.CSSProperties}>
@@ -421,7 +449,7 @@ function App() {
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span>
         </a>
         <div className="topbar-context">
-          <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} onCreate={() => { void createNewCircle() }} />
+          <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} onCreate={() => { void createNewCircle() }} onJoin={() => setJoiningCircle(true)} />
           <button className="invite-trigger" type="button" onClick={() => setIsCircleHubOpen(true)}><UsersRound size={14} /><span>Members</span></button>
         </div>
         <button className="profile-trigger" type="button" aria-label="Open profile" onClick={() => setIsProfileOpen(true)}><span className="profile-trigger-avatar">{currentMember?.avatarUrl ? <img src={currentMember.avatarUrl} alt="" /> : initialsFor(displayName)}</span><span className="profile-trigger-name">{displayName}</span><UserRound className="profile-trigger-icon" size={14} /></button>
@@ -472,7 +500,7 @@ function App() {
       <AnimatePresence>
         {isCreateOpen && <CreateGalaDialog key={editingGalaId ?? 'new-gala'} initial={activeCircle.galas.find((gala) => gala.id === editingGalaId)} onClose={() => { setIsCreateOpen(false); setEditingGalaId(null) }} onCreate={saveGala} transition={dialogTransition} />}
         {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}
-        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={activeCircle.role !== 'organizer' || activeCircle.members.filter((member) => member.role === 'organizer').length > 1} onCreateInvite={createInvite} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
+        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={activeCircle.role !== 'organizer' || activeCircle.members.filter((member) => member.role === 'organizer').length > 1} onCreateCode={() => createJoinCode(supabase!, activeCircle.id)} onCreateInvite={createInvite} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
         {isProfileOpen && <ProfileDialog displayName={displayName} currentUserId={session.user.id} avatarUrl={activeCircle.members.find((member) => member.id === session.user.id)?.avatarUrl} onChangeAvatar={changeProfileAvatar} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} email={session.user.email} onSignOut={() => { void signOut() }} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
         {expenseEditor && <ExpenseEditorDialog key={`${expenseEditor.galaId}-${expenseEditor.expense?.id ?? 'new'}`} initial={expenseEditor.expense} onClose={() => setExpenseEditor(null)} onSave={(expense) => saveExpense(expenseEditor.galaId, expense, expenseEditor.expense?.id)} transition={dialogTransition} />}
       </AnimatePresence>

@@ -163,6 +163,20 @@ export async function createCircle(client: SupabaseClient, name: string) {
   return String(data)
 }
 
+export async function createJoinCode(client: SupabaseClient, circleId: string): Promise<{ code: string; expires_at: string }> {
+  const { data, error } = await client.rpc('create_circle_join_code', { p_circle_id: circleId })
+  errorOrThrow(error)
+  return data
+}
+
+export async function redeemJoinCode(client: SupabaseClient, code: string): Promise<string> {
+  const { data, error } = await client.rpc('redeem_circle_join_code', { p_code: code })
+  errorOrThrow(error)
+  if (data?.error) throw new Error(data.error)
+  if (!data?.circle_id) throw new Error('Could not join this circle. Try again.')
+  return data.circle_id
+}
+
 export async function createCircleInvite(client: SupabaseClient, circleId: string) {
   const random = crypto.getRandomValues(new Uint8Array(32))
   const token = Array.from(random, (byte) => byte.toString(16).padStart(2, '0')).join('')

@@ -897,3 +897,19 @@ html:not([data-theme="dark"]) .details-bottom-note { color: #625d55; }
   .rsvp-action { padding-inline: 8px; }
   .expense-main > div { flex-wrap: wrap; }
 }
+.onboarding-photo { position: relative; display: grid; width: 80px; height: 80px; margin: 0 auto 4px; padding: 0; place-items: center; border: 0; border-radius: 50%; color: #fff; background: #bd684d; cursor: pointer; }
+.onboarding-photo > img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+.onboarding-photo > span { font-size: 24px; }
+.onboarding-photo i { position: absolute; right: -2px; bottom: -2px; display: grid; width: 28px; height: 28px; place-items: center; border: 2px solid var(--paper); border-radius: 50%; background: #355440; }
+.photo-help { margin-bottom: 14px; color: #706a60; text-align: center; font-size: 11px; line-height: 1.5; }
+.circle-code-section { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 16px 0; padding: 14px 0; border-top: 1px solid #ddd6c9; border-bottom: 1px solid #ddd6c9; }
+.circle-code-section > div:first-child { flex: 1; min-width: 160px; }
+.circle-code-section strong { font-size: 12px; }
+.circle-code-section p { margin: 5px 0 0; color: #706a60; font-size: 11px; line-height: 1.4; }
+.circle-code-value { display: flex; flex: 0 0 100%; flex-wrap: wrap; gap: 8px; align-items: center; }
+.circle-code-value input { width: min(100%, 220px); padding: 10px; border: 1px solid #ddd6c9; border-radius: 8px; color: var(--ink); background: var(--paper); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 1.4; letter-spacing: .08em; }
+.circle-code-value small { flex: 0 0 100%; color: #706a60; font-size: 10px; }
+.join-code-input { text-transform: uppercase; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+.return-to-circle { position: fixed; top: 20px; left: 20px; padding: 10px 14px; border: 1px solid #ddd6c9; border-radius: 8px; color: var(--ink); background: var(--paper); cursor: pointer; }
+html[data-theme="dark"] .photo-help, html[data-theme="dark"] .circle-code-section p, html[data-theme="dark"] .circle-code-value small { color: #bbb8ae; }
+html[data-theme="dark"] .circle-start-form input { color: #eee; border-color: #586252; background: #242b26; }

@@ -43,7 +43,7 @@ export function SignInScreen({ loading, error, invitePending, onEmailAuth }: Sig
       <button className="auth-mode-toggle" type="button" disabled={loading} onClick={() => { setCreateAccount((current) => !current); setFormError('') }}>
         {createAccount ? 'Already have an account? Sign in' : 'New to Galaan? Create an account'}
       </button>
-      <small>For email-free signup, turn off “Confirm email” in Supabase first. Password resets still use email.</small>
+      <small>Your circles are private to their members.</small>
     </section>
   </main>
 }
@@ -52,28 +52,34 @@ interface FirstCircleScreenProps {
   loading: boolean
   error: string
   onCreate: (name: string) => void
+  onJoin: (code: string) => void
+  startWithJoin?: boolean
   onSignOut: () => void
 }
 
-export function FirstCircleScreen({ loading, error, onCreate, onSignOut }: FirstCircleScreenProps) {
+export function FirstCircleScreen({ loading, error, onCreate, onJoin, startWithJoin = false, onSignOut }: FirstCircleScreenProps) {
   const [name, setName] = useState('')
+  const [joining, setJoining] = useState(startWithJoin)
+  const [code, setCode] = useState('')
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (name.trim().length >= 2) onCreate(name.trim())
+    if (loading) return
+    if (joining) onJoin(code)
+    else if (name.trim().length >= 2) onCreate(name.trim())
   }
 
   return <main className="account-screen">
     <section className="account-card circle-start-card">
       <a className="brand-lockup account-brand" href="#home" aria-label="Galaan"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span></a>
       <div className="account-illustration"><UsersRound size={25} /><span /></div>
-      <h1>Start your first circle.</h1>
-      <p>Create a home for one barkada. You can invite friends with a private link after it’s set up.</p>
+      <h1>{joining ? 'Your barkada is waiting.' : 'Start your first circle.'}</h1>
+      <p>{joining ? 'Enter the circle code your organizer shared with you.' : 'Create a home for one barkada, then invite everyone with a link or circle code.'}</p>
       {error && <div className="account-error" role="alert">{error}</div>}
       <form className="circle-start-form" onSubmit={submit}>
-        <label htmlFor="circle-name">Circle name</label>
-        <input id="circle-name" value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={60} placeholder="e.g. College Tropa" required />
-        <button className="primary-button" type="submit" disabled={loading || name.trim().length < 2}><CirclePlus size={16} />{loading ? 'Creating…' : 'Create my circle'}</button>
+        {joining ? <><label htmlFor="join-code">Circle code</label><input id="join-code" className="join-code-input" autoComplete="off" autoCapitalize="characters" spellCheck={false} value={code} onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^A-F0-9-]/g, '').slice(0, 14))} placeholder="ABCD-EF12-3456" required /></> : <><label htmlFor="circle-name">Circle name</label><input id="circle-name" value={name} onChange={(event) => setName(event.target.value)} minLength={2} maxLength={60} placeholder="e.g. College Tropa" required /></>}
+        <button className="primary-button" type="submit" disabled={loading || (joining ? code.replace(/-/g, '').length !== 12 : name.trim().length < 2)}><CirclePlus size={16} />{loading ? 'Please wait…' : joining ? 'Join circle' : 'Create my circle'}</button>
       </form>
+      <button className="auth-mode-toggle" type="button" disabled={loading} onClick={() => setJoining((value) => !value)}>{joining ? 'Want to start your own? Create a circle' : 'Already have a circle? Join with a code'}</button>
       <button className="account-signout" type="button" onClick={onSignOut}>Sign out</button>
     </section>
   </main>

@@ -7,9 +7,10 @@ interface CircleSwitcherProps {
   activeCircle: Circle
   onSelect: (id: string) => void
   onCreate?: () => void
+  onJoin?: () => void
 }
 
-export function CircleSwitcher({ circles, activeCircle, onSelect, onCreate }: CircleSwitcherProps) {
+export function CircleSwitcher({ circles, activeCircle, onSelect, onCreate, onJoin }: CircleSwitcherProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -42,6 +43,7 @@ export function CircleSwitcher({ circles, activeCircle, onSelect, onCreate }: Ci
           <span className="circle-option-copy"><strong>{circle.name}</strong><small>{circle.subtitle}</small></span>
           {circle.id === activeCircle.id && <Check size={15} />}
         </button>)}
+        {onJoin && <button className="circle-create-action" type="button" onClick={() => { onJoin(); setOpen(false) }}>Join with a code</button>}
         {onCreate && <button className="circle-create-action" type="button" onClick={() => { onCreate(); setOpen(false) }}>+ Create a circle</button>}
       </div>}
     </div>

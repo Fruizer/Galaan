@@ -3,11 +3,14 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { ArrowUpRight, CalendarPlus, Check, Clock3, Download, ExternalLink, Link2, MapPin, PenLine, Plus, Trash2, UsersRound, X } from 'lucide-react'
 import type { Expense, Gala, GalaRecap, Member, RSVPStatus } from '../types'
 import { makeGoogleCalendarUrl, makeIcsFile } from '../utils/calendar'
+import { AvatarContent } from './AvatarContent'
 
 interface GalaDetailsProps {
   gala: Gala
   members: Member[]
   isPast: boolean
+  canManage: boolean
+  canMarkOthersPaid: boolean
   onSign: () => void
   onSetRsvp: (status: RSVPStatus) => void
   onTogglePaid: (expenseId: string, memberId: string) => void
@@ -37,7 +40,7 @@ function safeExternalUrl(value: string) {
   }
 }
 
-export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onTogglePaid, onAddExpense, onEditExpense, onDeleteExpense, onSaveRecap, onEdit, onDelete, onClose }: GalaDetailsProps) {
+export function GalaDetails({ gala, members, isPast, canManage, canMarkOthersPaid, onSign, onSetRsvp, onTogglePaid, onAddExpense, onEditExpense, onDeleteExpense, onSaveRecap, onEdit, onDelete, onClose }: GalaDetailsProps) {
   const reduceMotion = useReducedMotion()
   const [recapNote, setRecapNote] = useState(gala.recap?.note ?? '')
   const [albumLabel, setAlbumLabel] = useState('')
@@ -46,7 +49,8 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
   const [calendarError, setCalendarError] = useState('')
   const going = gala.rsvps.filter((rsvp) => rsvp.status === 'going')
   const quorumMet = going.length >= gala.quorum
-  const ownRsvp = gala.rsvps.find((rsvp) => rsvp.memberId === 'you')
+  const ownRsvp = gala.rsvps.find((rsvp) => rsvp.memberId === members.find((member) => member.isYou)?.id)
+  const creatorName = members.find((member) => member.id === gala.createdBy)?.name ?? 'a circle member'
   const total = gala.expenses.reduce((sum, expense) => sum + expense.amount, 0)
   const perHead = going.length > 0 ? total / going.length : 0
   const splitLabel = useMemo(() => peso(perHead), [perHead])
@@ -99,15 +103,15 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
   }
 
   return <motion.section className={`details-panel${isPast ? ' details-recap' : quorumMet ? ' details-color' : ' details-drawing'}`} aria-labelledby="details-title" initial={{ opacity: 0, y: reduceMotion ? 0 : 15 }} animate={{ opacity: 1, y: 0 }} transition={reduceMotion ? { duration: 0.01 } : { type: 'spring', stiffness: 300, damping: 27, mass: 0.85 }}>
-    <div className="details-topline"><span className={`status-pill ${isPast ? 'status-recap' : quorumMet ? 'status-color' : 'status-drawing'}`}><i />{isPast ? 'Recap' : quorumMet ? 'May Kulay Na' : 'Drawing'}</span><div className="details-top-actions"><button className="details-edit-action" type="button" onClick={onEdit}><PenLine size={13} /> Edit</button><button className="icon-button details-delete" type="button" aria-label="Delete gala" onClick={onDelete}><Trash2 size={15} /></button><button className="icon-button details-close" type="button" aria-label="Close gala details" onClick={onClose}><X size={17} /></button></div></div>
-    <div className="details-date-label">{formatLongDate(gala.date)}</div><h2 id="details-title">{gala.title}</h2><span className="details-vibe">{gala.vibe}</span>
+    <div className="details-topline"><span className={`status-pill ${isPast ? 'status-recap' : quorumMet ? 'status-color' : 'status-drawing'}`}><i />{isPast ? 'Recap' : quorumMet ? 'May Kulay Na' : 'Drawing'}</span><div className="details-top-actions">{canManage && <><button className="details-edit-action" type="button" onClick={onEdit}><PenLine size={13} /> Edit</button><button className="icon-button details-delete" type="button" aria-label="Delete gala" onClick={onDelete}><Trash2 size={15} /></button></>}<button className="icon-button details-close" type="button" aria-label="Close gala details" onClick={onClose}><X size={17} /></button></div></div>
+    <div className="details-date-label">{formatLongDate(gala.date)}</div><h2 id="details-title">{gala.title}</h2><span className="details-vibe">{gala.vibe}</span><span className="details-owner-note">Planned by {canManage ? 'you' : creatorName}</span>
     {!isPast && <div className="details-commitment">
       <div className="commitment-copy"><UsersRound size={16} /><strong>{going.length} of {gala.quorum} going</strong><span>{quorumMet ? 'The plan has color.' : `${Math.max(0, gala.quorum - going.length)} more to make it happen.`}</span></div>
       <div className="commitment-track"><i style={{ transform: `scaleX(${Math.min(1, going.length / gala.quorum)})` }} /></div>
       <div className="detail-going-list">{gala.rsvps.filter((rsvp) => rsvp.status === 'going').map((rsvp) => {
         const member = members.find((item) => item.id === rsvp.memberId)
         if (!member) return null
-        return <span className={`going-person${rsvp.signature ? ' has-signature' : ''}`} key={rsvp.memberId}><i style={{ backgroundColor: member.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.initials.slice(0, 1)}</i>{member.isYou ? 'You' : member.name.split(' ')[0]}</span>
+        return <span className={`going-person${rsvp.signature ? ' has-signature' : ''}`} key={rsvp.memberId}><i style={{ backgroundColor: member.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : <AvatarContent src={member.avatarUrl} fallback={member.initials.slice(0, 1)} />}</i>{member.isYou ? 'You' : member.name.split(' ')[0]}</span>
       })}</div>
       <div className="rsvp-choice-group" role="group" aria-label="Your RSVP">
         <button className={`rsvp-choice going-choice${ownRsvp?.status === 'going' ? ' selected' : ''}`} type="button" aria-pressed={ownRsvp?.status === 'going'} onClick={onSign}><PenLine size={14} /><span>Going</span>{ownRsvp?.status === 'going' && <Check size={13} />}</button>
@@ -130,7 +134,7 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
       </div>
       {calendarError && <p className="calendar-export-error" role="alert">{calendarError}</p>}
     </div>}
-    {isPast && <div className="detail-section recap-editor">
+    {isPast && (canManage ? <div className="detail-section recap-editor">
       <div className="recap-heading"><div><h3>Proof of life</h3><p>Drop the album and save a little memory.</p></div><span className="recap-spark">✦</span></div>
       <label className="field-label recap-note-label">A note from the day<textarea maxLength={500} value={recapNote} onChange={(event) => setRecapNote(event.target.value)} placeholder="The best moment, funniest quote, or what we should do next…" /></label>
       <button className="secondary-action recap-save" type="button" onClick={saveRecapNote}>Save recap note</button>
@@ -141,23 +145,23 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
         {recapError && <p className="form-error" role="alert">{recapError}</p>}
         <button className="primary-button album-add-button" type="submit"><Plus size={14} /> Add album link</button>
       </form>
-    </div>}
+    </div> : <div className="detail-section recap-view"><h3>Proof of life</h3>{gala.recap?.note ? <p className="gala-notes">“{gala.recap.note}”</p> : <p className="recap-empty">No recap note yet.</p>}{Boolean(gala.recap?.albums.length) && <div className="album-link-list">{gala.recap!.albums.map((album) => <div className="album-link-row" key={album.id}><a href={album.url} target="_blank" rel="noreferrer"><Link2 size={14} /><span>{album.label}</span><ExternalLink size={11} /></a></div>)}</div>}</div>)}
     <div className="detail-section ambagan-section">
       <div className="ambagan-heading"><div><h3>Ambagan</h3><span>{gala.expenses.length ? 'Shared expenses' : 'No shared costs added yet'}</span></div><div className="ambagan-total"><strong>{peso(total)}</strong><span>total</span></div></div>
       {gala.expenses.length > 0 && <div className="per-head-banner"><span>Per head right now</span><strong>{splitLabel}</strong><small>{going.length} confirmed {going.length === 1 ? 'person' : 'people'}</small></div>}
       <div className="expense-list">{gala.expenses.map((expense) => {
         const each = going.length > 0 ? expense.amount / going.length : expense.amount
         return <div className="expense-row" key={expense.id}>
-          <div className="expense-main"><span className={`expense-icon expense-${expense.category}`}><ArrowUpRight size={14} /></span><div><strong>{expense.label}</strong><span>{peso(expense.amount)} · {peso(each)} each</span></div><div className="expense-row-actions"><button type="button" aria-label={`Edit ${expense.label}`} onClick={() => onEditExpense(expense)}><PenLine size={12} /></button><button type="button" aria-label={`Delete ${expense.label}`} onClick={() => onDeleteExpense(expense.id)}><Trash2 size={12} /></button></div></div>
+          <div className="expense-main"><span className={`expense-icon expense-${expense.category}`}><ArrowUpRight size={14} /></span><div><strong>{expense.label}</strong><span>{peso(expense.amount)} · {peso(each)} each</span></div>{canManage && <div className="expense-row-actions"><button type="button" aria-label={`Edit ${expense.label}`} onClick={() => onEditExpense(expense)}><PenLine size={12} /></button><button type="button" aria-label={`Delete ${expense.label}`} onClick={() => onDeleteExpense(expense.id)}><Trash2 size={12} /></button></div>}</div>
           <div className="expense-people" aria-label={`Payment status for ${expense.label}`}>{going.map((rsvp) => {
             const member = members.find((item) => item.id === rsvp.memberId)
             if (!member) return null
             const paid = expense.paidMemberIds.includes(member.id)
-            return <button key={member.id} className={`paid-person${paid ? ' paid' : ''}`} type="button" title={`${member.isYou ? 'You' : member.name}: ${paid ? 'Paid' : 'Unpaid'}. Toggle status`} aria-label={`Toggle ${member.isYou ? 'your' : `${member.name}’s`} payment status, currently ${paid ? 'paid' : 'unpaid'}`} onClick={() => onTogglePaid(expense.id, member.id)}><i style={{ backgroundColor: member.color }}>{paid ? <Check size={10} /> : member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.initials.slice(0, 1)}</i><span>{member.isYou ? 'You' : member.name.split(' ')[0]}</span></button>
+            return <button key={member.id} className={`paid-person${paid ? ' paid' : ''}`} type="button" title={`${member.isYou ? 'You' : member.name}: ${paid ? 'Paid' : 'Unpaid'}${member.isYou || canMarkOthersPaid ? '. Toggle status' : ''}`} aria-label={`${member.isYou || canMarkOthersPaid ? 'Toggle' : 'View'} ${member.isYou ? 'your' : `${member.name}’s`} payment status, currently ${paid ? 'paid' : 'unpaid'}`} disabled={!member.isYou && !canMarkOthersPaid} onClick={() => onTogglePaid(expense.id, member.id)}><i style={{ backgroundColor: member.color }}>{paid ? <Check size={10} /> : <AvatarContent src={member.avatarUrl} fallback={member.initials.slice(0, 1)} />}</i><span>{member.isYou ? 'You' : member.name.split(' ')[0]}</span></button>
           })}</div>
         </div>
       })}</div>
-      <button className="add-expense-inline" type="button" onClick={onAddExpense}><Plus size={14} /> Add expense</button>
+      {canManage && <button className="add-expense-inline" type="button" onClick={onAddExpense}><Plus size={14} /> Add expense</button>}
     </div>
     <div className="details-bottom-note"><span className="bottom-note-line" />Easy plans, good memories.</div>
   </motion.section>

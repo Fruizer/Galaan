@@ -59,11 +59,16 @@ export async function loadCircles(client: SupabaseClient, userId: string): Promi
   errorOrThrow(profileResult.error)
   const profiles = (profileResult.data ?? []) as unknown as Row[]
   const avatarPaths = [...new Set(profiles.map((row) => row.avatar_url).filter((value): value is string => typeof value === 'string' && /^[0-9a-f-]{36}\/avatar\.webp$/.test(value)))]
-  const avatarResult = avatarPaths.length
-    ? await client.storage.from('profile-avatars').createSignedUrls(avatarPaths, 3600)
-    : { data: [], error: null }
-  errorOrThrow(avatarResult.error)
-  const avatarByPath = new Map((avatarResult.data ?? []).map((avatar) => [avatar.path, avatar.signedUrl]))
+  const avatarByPath = new Map<string, string>()
+  // Photos are optional; a storage hiccup should never hide a circle's plans.
+  if (avatarPaths.length) {
+    try {
+      const avatarResult = await client.storage.from('profile-avatars').createSignedUrls(avatarPaths, 3600)
+      if (!avatarResult.error) for (const avatar of avatarResult.data ?? []) {
+        if (avatar.path && avatar.signedUrl) avatarByPath.set(avatar.path, avatar.signedUrl)
+      }
+    } catch { /* Show initials and retry when the circle refreshes. */ }
+  }
   const galas = (galaResult.data ?? []) as unknown as Row[]
   const galaIds = galas.map((row) => String(row.id))
 
@@ -263,7 +268,7 @@ async function syncExpenses(client: SupabaseClient, galaId: string, userId: stri
     const matchIndex = remaining.findIndex((expense) => expense.label.toLowerCase() === draft.label.toLowerCase() && expense.category === draft.category)
     const match = matchIndex >= 0 ? remaining.splice(matchIndex, 1)[0] : undefined
     if (match) {
-      const { error } = await client.from('expenses').update({ label: draft.label.trim(), category: draft.category, amount: draft.amount }).eq('id', match.id)
+      const { error } = await client.from('expenses').update({ label: draft.label.trim(), category: draft.category, amount: draft.amount }).eq('id', match.id).select('id').single()
       errorOrThrow(error)
       retainedIds.push(match.id)
     } else {
@@ -273,7 +278,7 @@ async function syncExpenses(client: SupabaseClient, galaId: string, userId: stri
     }
   }
   for (const expense of remaining) {
-    const { error } = await client.from('expenses').delete().eq('id', expense.id)
+    const { error } = await client.from('expenses').delete().eq('id', expense.id).select('id').single()
     errorOrThrow(error)
   }
   return retainedIds
@@ -281,7 +286,7 @@ async function syncExpenses(client: SupabaseClient, galaId: string, userId: stri
 
 export async function saveGala(client: SupabaseClient, circleId: string, userId: string, input: NewGalaInput, current?: Gala) {
   if (current) {
-    const { error } = await client.from('galas').update(galaValues(circleId, userId, input, false)).eq('id', current.id)
+    const { error } = await client.from('galas').update(galaValues(circleId, userId, input, false)).eq('id', current.id).select('id').single()
     errorOrThrow(error)
     await syncExpenses(client, current.id, userId, input.expenses, current.expenses)
     return current.id
@@ -294,7 +299,7 @@ export async function saveGala(client: SupabaseClient, circleId: string, userId:
 }
 
 export async function deleteGala(client: SupabaseClient, galaId: string) {
-  const { error } = await client.from('galas').delete().eq('id', galaId)
+  const { error } = await client.from('galas').delete().eq('id', galaId).select('id').single()
   errorOrThrow(error)
 }
 
@@ -309,13 +314,13 @@ export async function upsertRsvp(client: SupabaseClient, galaId: string, userId:
 export async function saveExpense(client: SupabaseClient, galaId: string, userId: string, expense: Omit<Expense, 'id' | 'paidMemberIds'>, expenseId?: string) {
   const values = { label: expense.label.trim(), category: expense.category, amount: expense.amount }
   const { error } = expenseId
-    ? await client.from('expenses').update(values).eq('id', expenseId)
+    ? await client.from('expenses').update(values).eq('id', expenseId).select('id').single()
     : await client.from('expenses').insert({ ...values, gala_id: galaId, created_by: userId })
   errorOrThrow(error)
 }
 
 export async function deleteExpense(client: SupabaseClient, expenseId: string) {
-  const { error } = await client.from('expenses').delete().eq('id', expenseId)
+  const { error } = await client.from('expenses').delete().eq('id', expenseId).select('id').single()
   errorOrThrow(error)
 }
 
@@ -327,7 +332,7 @@ export async function setPayment(client: SupabaseClient, expenseId: string, user
 }
 
 export async function saveRecap(client: SupabaseClient, galaId: string, userId: string, recap: GalaRecap) {
-  const { error } = await client.from('galas').update({ recap_note: recap.note.trim() }).eq('id', galaId)
+  const { error } = await client.from('galas').update({ recap_note: recap.note.trim() }).eq('id', galaId).select('id').single()
   errorOrThrow(error)
   const { error: deleteError } = await client.from('gala_albums').delete().eq('gala_id', galaId)
   errorOrThrow(deleteError)

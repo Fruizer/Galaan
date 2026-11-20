@@ -3,6 +3,9 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { ArrowDownRight, CalendarDays, CirclePlus, MapPin, PartyPopper, Plus, Sparkles, UserRound, UsersRound } from 'lucide-react'
 import { CircleHubDialog } from './components/CircleHubDialog'
 import { CircleSwitcher } from './components/CircleSwitcher'
+import { AvatarContent } from './components/AvatarContent'
+import { ConfirmDialog } from './components/ConfirmDialog'
+import { CreateCircleDialog } from './components/CreateCircleDialog'
 import { CreateGalaDialog } from './components/CreateGalaDialog'
 import { ExpenseEditorDialog } from './components/ExpenseEditorDialog'
 import { GalaCard } from './components/GalaCard'
@@ -10,6 +13,7 @@ import { GalaDetails } from './components/GalaDetails'
 import { MonthCalendar } from './components/MonthCalendar'
 import { ProfileDialog } from './components/ProfileDialog'
 import { SignatureDialog } from './components/SignatureDialog'
+import { TourDialog } from './components/TourDialog'
 import { FirstCircleScreen, SignInScreen } from './components/AccountScreens'
 import { ProfileSetupScreen } from './components/ProfileSetupScreen'
 import { useBodyScrollLock } from './hooks/useBodyScrollLock'
@@ -25,6 +29,10 @@ const INITIAL_MONTH = new Date(new Date().getFullYear(), new Date().getMonth(), 
 const EMPTY_CIRCLE: Circle = { id: '', name: '', subtitle: '', color: '#5b7258', members: [], galas: [] }
 
 type ThemeMode = 'light' | 'dark'
+type ConfirmAction =
+  | { kind: 'leave-circle'; circleId: string; name: string }
+  | { kind: 'delete-gala'; galaId: string; name: string }
+  | { kind: 'delete-expense'; expenseId: string; name: string }
 
 function initialsFor(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'Y'
@@ -102,6 +110,9 @@ function App() {
   const [isSignatureOpen, setIsSignatureOpen] = useState(false)
   const [isCircleHubOpen, setIsCircleHubOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
+  const [isCreateCircleOpen, setIsCreateCircleOpen] = useState(false)
+  const [isTourOpen, setIsTourOpen] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [displayName, setDisplayName] = useState(readSavedName)
   const [theme, setTheme] = useState<ThemeMode>(readSavedTheme)
   const [editingGalaId, setEditingGalaId] = useState<string | null>(null)
@@ -114,6 +125,7 @@ function App() {
   const sessionUserId = session?.user.id
   const sessionName = session?.user.user_metadata.full_name ?? session?.user.user_metadata.name
   const sessionEmail = session?.user.email
+  const firstTourPending = session?.user.user_metadata.galaan_tour_pending === true
 
   useBodyScrollLock(Boolean(selectedGalaId), '(max-width: 720px)')
 
@@ -138,26 +150,34 @@ function App() {
     const currentUserId = sessionUserId
     let cancelled = false
     let refreshTimer: number | undefined
+    let refreshNumber = 0
+    let lastAvatarRefresh = 0
+    let lastVisibleRefresh = Date.now()
+    let hasLoadedOnce = false
     setDataLoaded(false)
     setDataError('')
     async function refresh() {
+      const request = ++refreshNumber
       try {
         const [nextCircles, profileResult] = await Promise.all([
           loadCircles(client!, currentUserId),
           client!.from('profiles').select('display_name, onboarding_completed').eq('id', currentUserId).maybeSingle(),
         ])
         if (profileResult.error) throw new Error(profileResult.error.message)
-        if (cancelled) return
+        if (cancelled || request !== refreshNumber) return
         setCircles(nextCircles)
         setActiveCircleId((current) => nextCircles.some((circle) => circle.id === current) ? current : nextCircles[0]?.id ?? '')
         const profile = profileResult.data as { display_name?: string; onboarding_completed?: boolean } | null
         setProfileReady(profile?.onboarding_completed === true)
         setDisplayName(profile?.display_name ?? (typeof sessionName === 'string' ? sessionName : sessionEmail?.split('@')[0] ?? 'You'))
+        hasLoadedOnce = true
+        setDataError('')
+        setActionError((current) => current.startsWith('Could not refresh your circles.') ? '' : current)
         setDataLoaded(true)
       } catch (error) {
-        if (cancelled) return
-        setDataError(error instanceof Error ? error.message : 'Could not load your circles.')
-        setDataLoaded(true)
+        if (cancelled || request !== refreshNumber) return
+        if (hasLoadedOnce) setActionError('Could not refresh your circles. Your last loaded plans are still here; check your connection and try again shortly.')
+        else { setDataError(error instanceof Error ? error.message : 'Could not load your circles.'); setDataLoaded(true) }
       }
     }
     void refresh()
@@ -169,29 +189,51 @@ function App() {
       })
     }
     channel.subscribe()
+    function refreshOnReturn() {
+      const now = Date.now()
+      if (document.visibilityState === 'visible' && now - lastVisibleRefresh > 60000) {
+        lastVisibleRefresh = now
+        void refresh()
+      }
+    }
+    function refreshFailedAvatar() {
+      const now = Date.now()
+      if (now - lastAvatarRefresh < 15000) return
+      lastAvatarRefresh = now
+      if (refreshTimer) window.clearTimeout(refreshTimer)
+      refreshTimer = window.setTimeout(() => { void refresh() }, 350)
+    }
+    document.addEventListener('visibilitychange', refreshOnReturn)
+    window.addEventListener('galaan:avatar-error', refreshFailedAvatar)
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', refreshOnReturn)
+      window.removeEventListener('galaan:avatar-error', refreshFailedAvatar)
       if (refreshTimer) window.clearTimeout(refreshTimer)
       void client.removeChannel(channel)
     }
   }, [sessionUserId, sessionName, sessionEmail, authLoaded])
 
   useEffect(() => {
-    if (!session || !supabase || !profileReady) return
+    if (!sessionUserId || !supabase || !profileReady) return
+    const currentUserId = sessionUserId
+    const client = supabase
     let cancelled = false
     async function redeemPendingInvite() {
       let token = ''
       try { token = sessionStorage.getItem('galaan-pending-invite') ?? '' } catch { return }
       if (!token) return
       try {
-        const circleId = await redeemCircleInvite(supabase!, token)
+        const circleId = await redeemCircleInvite(client, token)
         try { sessionStorage.removeItem('galaan-pending-invite') } catch { /* ignore */ }
         if (cancelled) return
         setInvitePending(false)
-        const loaded = await loadCircles(supabase!, session!.user.id)
+        const loaded = await loadCircles(client, currentUserId)
         if (cancelled) return
         setCircles(loaded)
         setActiveCircleId(circleId)
+        setSelectedDate(null); setSelectedGalaId(null); setMonth(INITIAL_MONTH); setStatusFilter('all')
+        if (firstTourPending) setIsTourOpen(true)
       } catch (error) {
         try { sessionStorage.removeItem('galaan-pending-invite') } catch { /* ignore */ }
         if (!cancelled) {
@@ -202,7 +244,7 @@ function App() {
     }
     void redeemPendingInvite()
     return () => { cancelled = true }
-  }, [sessionUserId, profileReady])
+  }, [sessionUserId, profileReady, firstTourPending])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -277,11 +319,12 @@ function App() {
   }
 
   function togglePaid(galaId: string, expenseId: string, memberId: string) {
-    if (memberId !== session?.user.id && activeCircle.role !== 'organizer') {
-      setActionError('Only a circle organizer can update someone else’s payment.')
+    const gala = activeCircle.galas.find((item) => item.id === galaId)
+    if (memberId !== session?.user.id && activeCircle.role !== 'organizer' && gala?.createdBy !== session?.user.id) {
+      setActionError('Only this gala’s creator or a circle organizer can update someone else’s payment.')
       return
     }
-    const expense = activeCircle.galas.find((gala) => gala.id === galaId)?.expenses.find((item) => item.id === expenseId)
+    const expense = gala?.expenses.find((item) => item.id === expenseId)
     if (!expense || !session) return
     void mutate(() => setPayment(supabase!, expenseId, memberId, !expense.paidMemberIds.includes(memberId)))
   }
@@ -290,10 +333,6 @@ function App() {
     void mutate(() => saveExpenseRow(supabase!, galaId, session!.user.id, expense, expenseId)).then((saved) => {
       if (saved) setExpenseEditor(null)
     })
-  }
-
-  function deleteExpense(_galaId: string, expenseId: string) {
-    void mutate(() => deleteExpenseRow(supabase!, expenseId))
   }
 
   function saveRecap(galaId: string, recap: GalaRecap) {
@@ -314,23 +353,21 @@ function App() {
     })()
   }
 
-  function deleteGala(galaId: string) {
-    void mutate(() => deleteGalaRow(supabase!, galaId)).then((saved) => {
-      if (saved) setSelectedGalaId(null)
-    })
-  }
-
   function leaveCircle(circleId: string) {
     const circle = circles.find((item) => item.id === circleId)
-    if (!circle || !window.confirm(`Leave ${circle.name}? It will disappear from your circle switcher.`)) return
-    void (async () => {
-      const saved = await mutate(() => leaveCircleRow(supabase!, circleId))
-      if (saved) {
-        setIsCircleHubOpen(false)
-        setSelectedDate(null)
-        setSelectedGalaId(null)
-      }
-    })()
+    if (circle) setConfirmAction({ kind: 'leave-circle', circleId, name: circle.name })
+  }
+
+  async function confirmChange() {
+    if (!supabase || !confirmAction) throw new Error('Sign in again to make this change.')
+    const action = confirmAction
+    if (action.kind === 'leave-circle') await leaveCircleRow(supabase, action.circleId)
+    if (action.kind === 'delete-gala') await deleteGalaRow(supabase, action.galaId)
+    if (action.kind === 'delete-expense') await deleteExpenseRow(supabase, action.expenseId)
+    await refreshCircles()
+    setActionError('')
+    if (action.kind === 'leave-circle') { setIsCircleHubOpen(false); setSelectedDate(null); setSelectedGalaId(null) }
+    if (action.kind === 'delete-gala') setSelectedGalaId(null)
   }
 
   function saveProfileName(name: string) {
@@ -351,6 +388,8 @@ function App() {
     if (!supabase || !session) throw new Error('Sign in again to finish your profile.')
     if (name.trim().length < 2 || name.trim().length > 36) throw new Error('Use a name between 2 and 36 characters.')
     if (photo) await updateProfileAvatar(supabase, session.user.id, photo)
+    const { error: tourError } = await supabase.auth.updateUser({ data: { galaan_tour_pending: true } })
+    if (tourError) throw new Error(tourError.message)
     const { error } = await supabase.from('profiles').update({ display_name: name.trim(), onboarding_completed: true }).eq('id', session.user.id)
     if (error) throw new Error(error.message)
     setDisplayName(name.trim())
@@ -364,20 +403,24 @@ function App() {
       const id = joining ? await redeemJoinCode(supabase, value) : await createCircle(supabase, value)
       await refreshCircles(id)
       setJoiningCircle(false); setSelectedGalaId(null); setSelectedDate(null)
+      setMonth(INITIAL_MONTH); setStatusFilter('all')
+      if (circles.length === 0 && session?.user.user_metadata.galaan_tour_pending === true) setIsTourOpen(true)
     } catch (error) { setActionError(error instanceof Error ? error.message : 'Could not open that circle. Try again.') }
     finally { setCircleBusy(false) }
   }
 
-  async function createNewCircle() {
-    const name = window.prompt('What should this circle be called?')
-    if (!name || name.trim().length < 2) return
-    try {
-      const circleId = await createCircle(supabase!, name)
-      await refreshCircles(circleId)
-      setActionError('')
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Could not create that circle.')
-    }
+  async function createNewCircle(name: string) {
+    if (!supabase || !session) throw new Error('Sign in again to create a circle.')
+    const circleId = await createCircle(supabase, name)
+    await refreshCircles(circleId)
+    setSelectedDate(null); setSelectedGalaId(null); setMonth(INITIAL_MONTH); setStatusFilter('all')
+    setActionError('')
+  }
+
+  function finishTour(startPlanning: boolean) {
+    setIsTourOpen(false)
+    if (startPlanning) setIsCreateOpen(true)
+    if (supabase && session) void supabase.auth.updateUser({ data: { galaan_tour_pending: false } })
   }
 
   async function authenticateWithEmail(email: string, password: string, createAccount: boolean) {
@@ -449,10 +492,10 @@ function App() {
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span>
         </a>
         <div className="topbar-context">
-          <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} onCreate={() => { void createNewCircle() }} onJoin={() => setJoiningCircle(true)} />
+          <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} onCreate={() => setIsCreateCircleOpen(true)} onJoin={() => setJoiningCircle(true)} />
           <button className="invite-trigger" type="button" onClick={() => setIsCircleHubOpen(true)}><UsersRound size={14} /><span>Members</span></button>
         </div>
-        <button className="profile-trigger" type="button" aria-label="Open profile" onClick={() => setIsProfileOpen(true)}><span className="profile-trigger-avatar">{currentMember?.avatarUrl ? <img src={currentMember.avatarUrl} alt="" /> : initialsFor(displayName)}</span><span className="profile-trigger-name">{displayName}</span><UserRound className="profile-trigger-icon" size={14} /></button>
+        <button className="profile-trigger" type="button" aria-label="Open profile" onClick={() => setIsProfileOpen(true)}><span className="profile-trigger-avatar"><AvatarContent src={currentMember?.avatarUrl} fallback={initialsFor(displayName)} /></span><span className="profile-trigger-name">{displayName}</span><UserRound className="profile-trigger-icon" size={14} /></button>
         <button className="top-create-button" type="button" aria-label="Plan a gala" onClick={() => setIsCreateOpen(true)}><Plus size={17} strokeWidth={2.3} /><span>Plan a gala</span></button>
       </header>
 
@@ -488,21 +531,24 @@ function App() {
           <aside className="detail-column" aria-label="Selected gala details">
             {selectedGala ? <>
               <button className="detail-mobile-scrim" type="button" aria-label="Close gala details" onClick={() => setSelectedGalaId(null)} />
-              <GalaDetails key={selectedGala.id} gala={selectedGala} members={activeCircle.members} isPast={selectedGala.date < todayKey} onSign={() => { setSignatureGalaId(selectedGala.id); setIsSignatureOpen(true) }} onSetRsvp={chooseRsvp} onTogglePaid={(expenseId, memberId) => togglePaid(selectedGala.id, expenseId, memberId)} onAddExpense={() => setExpenseEditor({ galaId: selectedGala.id })} onEditExpense={(expense) => setExpenseEditor({ galaId: selectedGala.id, expense })} onDeleteExpense={(expenseId) => { if (window.confirm('Remove this expense from the split?')) deleteExpense(selectedGala.id, expenseId) }} onSaveRecap={(recap) => saveRecap(selectedGala.id, recap)} onEdit={() => { setEditingGalaId(selectedGala.id); setIsCreateOpen(true) }} onDelete={() => { if (window.confirm(`Delete “${selectedGala.title}” from this circle?`)) deleteGala(selectedGala.id) }} onClose={() => setSelectedGalaId(null)} />
+              <GalaDetails key={selectedGala.id} gala={selectedGala} members={activeCircle.members} isPast={selectedGala.date < todayKey} canManage={selectedGala.createdBy === session.user.id} canMarkOthersPaid={activeCircle.role === 'organizer' || selectedGala.createdBy === session.user.id} onSign={() => { setSignatureGalaId(selectedGala.id); setIsSignatureOpen(true) }} onSetRsvp={chooseRsvp} onTogglePaid={(expenseId, memberId) => togglePaid(selectedGala.id, expenseId, memberId)} onAddExpense={() => setExpenseEditor({ galaId: selectedGala.id })} onEditExpense={(expense) => setExpenseEditor({ galaId: selectedGala.id, expense })} onDeleteExpense={(expenseId) => { const expense = selectedGala.expenses.find((item) => item.id === expenseId); if (expense) setConfirmAction({ kind: 'delete-expense', expenseId, name: expense.label }) }} onSaveRecap={(recap) => saveRecap(selectedGala.id, recap)} onEdit={() => { setEditingGalaId(selectedGala.id); setIsCreateOpen(true) }} onDelete={() => setConfirmAction({ kind: 'delete-gala', galaId: selectedGala.id, name: selectedGala.title })} onClose={() => setSelectedGalaId(null)} />
             </> : (
               <div className="circle-note-panel"><div className="note-scribble"><Sparkles size={20} /></div><h2>Plans are better together.</h2><p>Pick a date or a gala to see who’s in, where you’re headed, and how much to ambag.</p><div className="note-illustration" aria-hidden="true"><span className="note-stamp"><PartyPopper size={22} /></span><span className="note-line note-line-one" /><span className="note-line note-line-two" /><span className="note-sun" /></div><div className="circle-note-foot"><MapPin size={14} /><span>For your {activeCircle.name.toLowerCase()}</span></div></div>
             )}
-            <div className="member-strip"><div className="member-strip-heading"><span>In the circle</span><button type="button" onClick={() => setIsCircleHubOpen(true)}>{activeCircle.members.length} members · View all</button></div><div className="member-avatars" aria-label={activeCircle.members.map((member) => member.name).join(', ')}>{activeCircle.members.slice(0, 7).map((member) => <span className="member-avatar" key={member.id} title={member.name} style={{ backgroundColor: member.color }}>{member.avatarUrl ? <img src={member.avatarUrl} alt="" /> : member.initials}</span>)}{activeCircle.members.length > 7 && <span className="member-avatar more-members">+{activeCircle.members.length - 7}</span>}</div></div>
+            <div className="member-strip"><div className="member-strip-heading"><span>In the circle</span><button type="button" onClick={() => setIsCircleHubOpen(true)}>{activeCircle.members.length} {activeCircle.members.length === 1 ? 'member' : 'members'} · View all</button></div><div className="member-avatars" aria-label={activeCircle.members.map((member) => member.name).join(', ')}>{activeCircle.members.slice(0, 7).map((member) => <span className="member-avatar" key={member.id} title={member.name} style={{ backgroundColor: member.color }}><AvatarContent src={member.avatarUrl} fallback={member.initials} /></span>)}{activeCircle.members.length > 7 && <span className="member-avatar more-members">+{activeCircle.members.length - 7}</span>}</div></div>
           </aside>
         </div>
       </main>
 
       <AnimatePresence>
         {isCreateOpen && <CreateGalaDialog key={editingGalaId ?? 'new-gala'} initial={activeCircle.galas.find((gala) => gala.id === editingGalaId)} onClose={() => { setIsCreateOpen(false); setEditingGalaId(null) }} onCreate={saveGala} transition={dialogTransition} />}
+        {isCreateCircleOpen && <CreateCircleDialog onCreate={createNewCircle} onClose={() => setIsCreateCircleOpen(false)} transition={dialogTransition} />}
+        {isTourOpen && <TourDialog circleName={activeCircle.name} hasGalas={activeCircle.galas.length > 0} onFinish={finishTour} transition={dialogTransition} />}
         {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}
         {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={activeCircle.role !== 'organizer' || activeCircle.members.filter((member) => member.role === 'organizer').length > 1} onCreateCode={() => createJoinCode(supabase!, activeCircle.id)} onCreateInvite={createInvite} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
-        {isProfileOpen && <ProfileDialog displayName={displayName} currentUserId={session.user.id} avatarUrl={activeCircle.members.find((member) => member.id === session.user.id)?.avatarUrl} onChangeAvatar={changeProfileAvatar} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} email={session.user.email} onSignOut={() => { void signOut() }} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
+        {isProfileOpen && <ProfileDialog displayName={displayName} currentUserId={session.user.id} avatarUrl={activeCircle.members.find((member) => member.id === session.user.id)?.avatarUrl} onChangeAvatar={changeProfileAvatar} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} email={session.user.email} onReplayTour={() => { setIsProfileOpen(false); setIsTourOpen(true) }} onSignOut={() => { void signOut() }} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
         {expenseEditor && <ExpenseEditorDialog key={`${expenseEditor.galaId}-${expenseEditor.expense?.id ?? 'new'}`} initial={expenseEditor.expense} onClose={() => setExpenseEditor(null)} onSave={(expense) => saveExpense(expenseEditor.galaId, expense, expenseEditor.expense?.id)} transition={dialogTransition} />}
+        {confirmAction && <ConfirmDialog key={`${confirmAction.kind}-${confirmAction.kind === 'leave-circle' ? confirmAction.circleId : confirmAction.kind === 'delete-gala' ? confirmAction.galaId : confirmAction.expenseId}`} title={confirmAction.kind === 'leave-circle' ? `Leave ${confirmAction.name}?` : confirmAction.kind === 'delete-gala' ? `Delete ${confirmAction.name}?` : `Remove ${confirmAction.name}?`} message={confirmAction.kind === 'leave-circle' ? 'This circle will disappear from your switcher. Someone can invite you back later.' : confirmAction.kind === 'delete-gala' ? 'The gala, its RSVPs, expenses, and recap will be removed for everyone in this circle.' : 'This cost and its payment statuses will be removed from the ambagan.'} confirmLabel={confirmAction.kind === 'leave-circle' ? 'Leave circle' : confirmAction.kind === 'delete-gala' ? 'Delete gala' : 'Remove expense'} onConfirm={confirmChange} onClose={() => setConfirmAction(null)} transition={dialogTransition} />}
       </AnimatePresence>
       <AnimatePresence>{savedNotice && <motion.div className="saved-toast" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={{ duration: 0.18 }}><span className="toast-check">✓</span> Pirma saved. You’re on the list.</motion.div>}</AnimatePresence>
     </div>

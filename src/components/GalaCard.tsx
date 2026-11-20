@@ -1,5 +1,6 @@
 import { ArrowUpRight, Clock3, MapPin, PenLine, UsersRound } from 'lucide-react'
 import type { Gala, Member } from '../types'
+import { AvatarContent } from './AvatarContent'
 
 interface GalaCardProps {
   gala: Gala
@@ -17,7 +18,7 @@ function formatDate(date: string) {
 export function GalaCard({ gala, members, selected, onOpen, onSign, isPast = false }: GalaCardProps) {
   const going = gala.rsvps.filter((rsvp) => rsvp.status === 'going')
   const quorumMet = going.length >= gala.quorum
-  const ownRsvp = gala.rsvps.find((rsvp) => rsvp.memberId === 'you')
+  const ownRsvp = gala.rsvps.find((rsvp) => rsvp.memberId === members.find((member) => member.isYou)?.id)
   const rsvpMembers = going.slice(0, 4).map((rsvp) => ({ rsvp, member: members.find((member) => member.id === rsvp.memberId) })).filter((item) => item.member)
   const signedMembers = going.map((rsvp) => ({ rsvp, member: members.find((member) => member.id === rsvp.memberId) })).filter((item) => item.member && item.rsvp.signature)
 
@@ -41,7 +42,7 @@ export function GalaCard({ gala, members, selected, onOpen, onSign, isPast = fal
       </button>
       <div className="gala-card-footer">
         <div className="rsvp-progress" aria-label={`${going.length} of ${gala.quorum} going`}>
-          <div className="mini-avatars">{rsvpMembers.map(({ member, rsvp }) => <span key={member!.id} className="mini-avatar" title={`${member!.name}${rsvp.signature ? ' · signed' : ''}`} style={{ backgroundColor: member!.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : member!.avatarUrl ? <img src={member!.avatarUrl} alt="" /> : member!.initials.slice(0, 1)}</span>)}</div>
+          <div className="mini-avatars">{rsvpMembers.map(({ member, rsvp }) => <span key={member!.id} className="mini-avatar" title={`${member!.name}${rsvp.signature ? ' · signed' : ''}`} style={{ backgroundColor: member!.color }}>{rsvp.signature?.startsWith('data:image/') ? <img src={rsvp.signature} alt="" /> : rsvp.signature ? <PenLine size={10} /> : <AvatarContent src={member!.avatarUrl} fallback={member!.initials.slice(0, 1)} />}</span>)}</div>
           <span className="going-count"><UsersRound size={13} /><strong>{going.length}</strong><span>/{gala.quorum} going</span></span>
           <span className="progress-track"><i style={{ transform: `scaleX(${Math.min(1, going.length / gala.quorum)})` }} /></span>
         </div>

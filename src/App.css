@@ -913,3 +913,94 @@ html:not([data-theme="dark"]) .details-bottom-note { color: #625d55; }
 .return-to-circle { position: fixed; top: 20px; left: 20px; padding: 10px 14px; border: 1px solid #ddd6c9; border-radius: 8px; color: var(--ink); background: var(--paper); cursor: pointer; }
 html[data-theme="dark"] .photo-help, html[data-theme="dark"] .circle-code-section p, html[data-theme="dark"] .circle-code-value small { color: #bbb8ae; }
 html[data-theme="dark"] .circle-start-form input { color: #eee; border-color: #586252; background: #242b26; }
+
+/* Keep a readable identity in place when a private photo URL expires. */
+.profile-trigger-avatar, .member-avatar, .circle-member-row > i, .mini-avatar, .going-person i, .paid-person i, .profile-avatar { position: relative; overflow: hidden; }
+.avatar-fallback { position: absolute; inset: 0; display: grid; place-items: center; width: 100%; height: 100%; color: #fffaf0; font-style: normal; }
+.avatar-photo { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.profile-identity .profile-avatar, html[data-theme="dark"] .profile-identity .profile-avatar { color: #fffaf0; }
+.profile-identity .avatar-fallback, html[data-theme="dark"] .profile-identity .avatar-fallback { color: #fffaf0; }
+
+.decision-dialog { width: min(100%, 440px); }
+.decision-dialog .dialog-heading { margin-bottom: 18px; }
+.decision-dialog .dialog-heading h2, .tour-dialog .dialog-heading h2, .circle-hub-dialog .dialog-heading h2 { overflow-wrap: anywhere; }
+.decision-input { width: 100%; min-height: 46px; margin-top: 8px; padding: 0 13px; border: 1px solid #d9d0c0; border-radius: 10px; outline-offset: 2px; color: var(--ink); background: #fffdf7; font: inherit; font-size: 15px; }
+.decision-input::placeholder { color: #81786e; }
+.decision-hint { display: flex; align-items: center; gap: 7px; margin: 12px 0 0; color: #676258; font-size: 12px; }
+.decision-message { margin: 0; color: #575047; font-size: 14px; line-height: 1.55; }
+.decision-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 24px; }
+.decision-actions > button { min-height: 42px; padding-inline: 15px; font-size: 12px; }
+.decision-danger { border: 0; border-radius: 10px; color: #fffaf0; background: #aa4333; font-weight: 720; cursor: pointer; transition: background 150ms ease, transform 150ms var(--ease-out); }
+.decision-danger:hover:not(:disabled) { background: #8f3529; }
+.decision-danger:active:not(:disabled) { transform: scale(.98); }
+.decision-danger:disabled { opacity: .6; cursor: wait; }
+.decision-dialog .form-error { margin-top: 12px; }
+
+.tour-dialog { width: min(100%, 500px); }
+.tour-dialog .dialog-heading { min-height: 64px; }
+.tour-visual { display: grid; place-items: center; min-height: 170px; padding: 18px; border-radius: 14px; background: #f1ecdf; }
+.tour-visual > div { display: flex; width: min(100%, 320px); flex-direction: column; align-items: flex-start; gap: 13px; }
+.tour-preview-label { display: inline-flex; align-items: center; gap: 6px; color: #625d52; font-size: 11px; font-weight: 720; }
+.tour-preview-pill { display: inline-flex; align-items: center; gap: 10px; max-width: 100%; min-height: 42px; padding: 0 13px; border: 1px solid #d8cebc; border-radius: 99px; color: #313731; background: #fffdf7; font-size: 13px; }
+.tour-preview-pill i { width: 9px; height: 9px; flex: none; border-radius: 50%; background: #507652; }
+.tour-preview-pill strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tour-preview-note { display: inline-flex; align-items: center; gap: 7px; color: #5d5a51; font-size: 11px; }
+.tour-calendar-days { display: grid; width: 100%; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+.tour-calendar-days i { display: grid; min-height: 43px; place-items: center; border-radius: 9px; color: #424238; background: #fffdf7; font-size: 12px; font-style: normal; }
+.tour-calendar-days .tour-day-active { position: relative; color: #fffaf0; background: #ba4c37; }
+.tour-day-active b { position: absolute; bottom: 5px; width: 5px; height: 5px; border-radius: 50%; background: #fffaf0; }
+.tour-progress-copy { display: inline-flex; width: 100%; align-items: center; gap: 8px; color: #344a38; font-size: 14px; font-weight: 740; }
+.tour-progress-copy svg:last-child { margin-left: auto; }
+.tour-progress-track { width: 100%; height: 7px; overflow: hidden; border-radius: 99px; background: #d4d0c6; }
+.tour-progress-track i { display: block; width: 75%; height: 100%; border-radius: inherit; background: #b3503e; }
+.tour-description { min-height: 57px; margin: 17px 0 0; color: #514e47; font-size: 13px; line-height: 1.55; }
+.tour-footer { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: #69635b; font-size: 11px; }
+.tour-progress { display: flex; gap: 5px; }
+.tour-progress i { width: 18px; height: 5px; border-radius: 99px; background: #d8d1c4; }
+.tour-progress i.active { background: #aa4333; }
+.tour-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 18px; }
+.tour-actions button { min-height: 42px; font-size: 12px; }
+.profile-tour-row { margin-top: 16px; }
+.profile-tour-row button { min-height: 40px; }
+.profile-circle-row > span { min-width: 0; overflow-wrap: anywhere; }
+.profile-dialog .profile-identity strong, .profile-dialog .profile-identity > div > span { overflow-wrap: anywhere; }
+.profile-dialog .profile-identity > div > span { font-size: 11px; }
+.profile-dialog .profile-name-form .field-label { font-size: 11px; }
+.profile-dialog .profile-name-form input { font-size: 14px; }
+.profile-dialog .profile-name-form .primary-button { min-height: 42px; font-size: 11px; }
+.profile-dialog .profile-section-heading { font-size: 12px; }
+.profile-dialog .profile-section-heading > strong { font-size: 11px; }
+.profile-dialog .profile-circle-row, .profile-dialog .profile-rsvp-row { min-height: 42px; }
+.profile-dialog .profile-circle-row > span, .profile-dialog .profile-rsvp-row strong { font-size: 12px; }
+.profile-dialog .profile-circle-row > small, .profile-dialog .profile-rsvp-row small, .profile-dialog .profile-empty-rsvp { font-size: 11px; }
+.profile-dialog .profile-rsvp-status { font-size: 10px; }
+.profile-dialog .profile-appearance strong, html[data-theme="dark"] .profile-dialog .profile-appearance strong { font-size: 12px; }
+.profile-dialog .profile-appearance span, html[data-theme="dark"] .profile-dialog .profile-appearance span { font-size: 11px; }
+.profile-dialog .theme-switch button, html[data-theme="dark"] .profile-dialog .theme-switch button { min-height: 38px; font-size: 11px; }
+.profile-dialog .profile-reset-row strong { font-size: 11px; }
+.profile-dialog .profile-reset-row span { font-size: 10px; line-height: 1.4; }
+.profile-dialog .profile-reset-row button { min-height: 40px; padding-inline: 10px; font-size: 11px; }
+.details-owner-note { display: inline-block; max-width: 100%; margin-left: 9px; color: #665f54; font-size: 11px; overflow-wrap: anywhere; }
+.recap-empty { margin: 12px 0 0; color: #70695e; font-size: 12px; }
+.paid-person:disabled { cursor: default; }
+.paid-person:disabled:active i { transform: none; }
+html[data-theme="dark"] .details-owner-note, html[data-theme="dark"] .recap-empty { color: #c4bdb1; }
+@media (max-width: 480px) { .details-owner-note { display: block; margin: 8px 0 0; } }
+
+html[data-theme="dark"] .decision-input, html[data-theme="dark"] .tour-preview-pill, html[data-theme="dark"] .tour-calendar-days i { border-color: #4b564d; color: #eeeae1; background: #262d28; }
+html[data-theme="dark"] .decision-input::placeholder { color: #b4afa5; }
+html[data-theme="dark"] .decision-hint, html[data-theme="dark"] .decision-message, html[data-theme="dark"] .tour-description, html[data-theme="dark"] .tour-preview-label, html[data-theme="dark"] .tour-preview-note, html[data-theme="dark"] .tour-footer { color: #d2cdc2; }
+html[data-theme="dark"] .tour-visual { background: #2b332c; }
+html[data-theme="dark"] .tour-calendar-days .tour-day-active { color: #fffaf0; background: #ad4f3c; }
+html[data-theme="dark"] .tour-progress-copy { color: #d3e5c6; }
+html[data-theme="dark"] .tour-progress-track, html[data-theme="dark"] .tour-progress i { background: #51564c; }
+html[data-theme="dark"] .tour-progress i.active { background: #ef8a72; }
+html[data-theme="dark"] .decision-danger { background: #b9503d; }
+html[data-theme="dark"] .decision-danger:hover:not(:disabled) { background: #d06550; }
+
+@media (max-width: 720px) {
+  .decision-dialog, .tour-dialog { width: 100%; }
+  .decision-dialog .dialog-heading, .tour-dialog .dialog-heading { min-height: 0; }
+  .tour-visual { min-height: 154px; }
+  .tour-description { min-height: 0; }
+}

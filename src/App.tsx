@@ -111,7 +111,7 @@ function App() {
       // The theme remains usable for this session when storage is unavailable.
     }
     const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-    if (themeMeta) themeMeta.content = theme === 'dark' ? '#171b19' : '#f4efe5'
+    if (themeMeta) themeMeta.content = theme === 'dark' ? '#171b19' : '#f1f1eb'
   }, [theme])
 
   const activeCircle = circles.find((circle) => circle.id === activeCircleId) ?? circles[0]
@@ -312,7 +312,7 @@ function App() {
           <section className="calendar-column" aria-label="Circle calendar and galas">
             <MonthCalendar month={month} galas={activeCircle.galas} selectedDate={selectedDate} onSelectDate={setSelectedDate} onShiftMonth={shiftMonth} />
             <section className="gala-feed" aria-labelledby="month-feed-title">
-              <div className="feed-heading-row"><div><h2 id="month-feed-title">This month’s galas</h2><p>{selectedDate ? `Plans for ${new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(`${selectedDate}T12:00:00`))}` : `${monthGalas.length} ${monthGalas.length === 1 ? 'plan' : 'plans'} on the calendar`}</p></div>{selectedDate && <button className="text-action" type="button" onClick={() => setSelectedDate(null)}>Show all</button>}</div>
+              <div className="feed-heading-row"><div><h2 id="month-feed-title">This month’s galas</h2><p>{selectedDate ? `Plans for ${new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(`${selectedDate}T12:00:00`))}` : `${monthGalas.length} ${monthGalas.length === 1 ? 'plan' : 'plans'} on the calendar`}</p></div><div className="feed-heading-actions">{selectedDate && <button className="text-action" type="button" onClick={() => setSelectedDate(null)}>Show all</button>}<button className="mobile-fab" type="button" onClick={() => setIsCreateOpen(true)} aria-label="Plan a gala"><CirclePlus size={18} /><span>Plan a gala</span></button></div></div>
               <div className="feed-filters" role="group" aria-label="Filter galas by quorum status">{([['all', 'All plans'], ['drawing', 'Drawing'], ['color', 'May Kulay Na']] as const).map(([value, label]) => <button key={value} className={`feed-filter${statusFilter === value ? ' active' : ''}`} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)}>{label}</button>)}</div>
               {visibleMonthGalas.length > 0 ? <div className="gala-list">{visibleMonthGalas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => setSelectedGalaId(gala.id)} onSign={() => { setSignatureGalaId(gala.id); setIsSignatureOpen(true) }} />)}</div> : (
                 <div className="empty-plans"><CalendarDays size={20} /><div><strong>{selectedDate ? 'No gala on this date yet.' : statusFilter === 'all' ? 'No galas this month yet.' : `No ${statusFilter === 'drawing' ? 'Drawing' : 'May Kulay Na'} plans here.`}</strong><span>{selectedDate ? 'Make the first move and invite the barkada.' : 'Try another filter or start a new plan.'}</span></div><button type="button" className="small-create" onClick={() => setIsCreateOpen(true)}>Plan one</button></div>
@@ -341,7 +341,6 @@ function App() {
         </div>
       </main>
 
-      <button className="mobile-fab" type="button" onClick={() => setIsCreateOpen(true)} aria-label="Plan a gala"><CirclePlus size={22} /><span>Plan a gala</span></button>
       <AnimatePresence>
         {isCreateOpen && <CreateGalaDialog key={editingGalaId ?? 'new-gala'} initial={activeCircle.galas.find((gala) => gala.id === editingGalaId)} onClose={() => { setIsCreateOpen(false); setEditingGalaId(null) }} onCreate={saveGala} transition={dialogTransition} />}
         {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}

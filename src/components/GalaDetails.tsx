@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
-import { ArrowUpRight, Check, Clock3, ExternalLink, Link2, MapPin, PenLine, Plus, Trash2, UsersRound, X } from 'lucide-react'
+import { ArrowUpRight, CalendarPlus, Check, Clock3, Download, ExternalLink, Link2, MapPin, PenLine, Plus, Trash2, UsersRound, X } from 'lucide-react'
 import type { Expense, Gala, GalaRecap, Member, RSVPStatus } from '../types'
+import { makeGoogleCalendarUrl, makeIcsFile } from '../utils/calendar'
 
 interface GalaDetailsProps {
   gala: Gala
@@ -42,6 +43,7 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
   const [albumLabel, setAlbumLabel] = useState('')
   const [albumUrl, setAlbumUrl] = useState('')
   const [recapError, setRecapError] = useState('')
+  const [calendarError, setCalendarError] = useState('')
   const going = gala.rsvps.filter((rsvp) => rsvp.status === 'going')
   const quorumMet = going.length >= gala.quorum
   const ownRsvp = gala.rsvps.find((rsvp) => rsvp.memberId === 'you')
@@ -50,6 +52,31 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
   const splitLabel = useMemo(() => peso(perHead), [perHead])
   const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(gala.address)}`
   const wazeUrl = `https://waze.com/ul?q=${encodeURIComponent(gala.address)}&navigate=yes`
+  const calendarActions = useMemo(() => {
+    try {
+      return { googleUrl: makeGoogleCalendarUrl(gala), ics: makeIcsFile(gala) }
+    } catch {
+      return null
+    }
+  }, [gala])
+
+  function downloadCalendarFile() {
+    if (!calendarActions) {
+      setCalendarError('Check the gala date and call time before adding it to your calendar.')
+      return
+    }
+
+    const file = new Blob([calendarActions.ics], { type: 'text/calendar;charset=utf-8' })
+    const fileUrl = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = fileUrl
+    link.download = `${gala.title.trim().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').toLowerCase() || 'galaan-gala'}.ics`
+    document.body.append(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(fileUrl), 1000)
+    setCalendarError('')
+  }
 
   function saveRecapNote() {
     onSaveRecap({ note: recapNote.trim(), albums: gala.recap?.albums ?? [] })
@@ -95,6 +122,14 @@ export function GalaDetails({ gala, members, isPast, onSign, onSetRsvp, onToggle
       <div className="plan-detail-row"><MapPin size={16} /><div><strong>{gala.venue}</strong><span>{gala.address}</span><span className="map-links"><a href={googleMapsUrl} target="_blank" rel="noreferrer">Google Maps <ExternalLink size={11} /></a><a href={wazeUrl} target="_blank" rel="noreferrer">Waze <ExternalLink size={11} /></a></span></div></div>
       {gala.notes && <p className="gala-notes">“{gala.notes}”</p>}
     </div>
+    {!isPast && <div className="calendar-export" aria-label="Add this gala to your calendar">
+      <div className="calendar-export-copy"><CalendarPlus size={16} /><div><strong>Add to your calendar</strong><span>Two hours, starting at the call time · Manila time</span></div></div>
+      <div className="calendar-export-actions">
+        <a className="calendar-export-button google-calendar-button" href={calendarActions?.googleUrl ?? '#'} target="_blank" rel="noreferrer" aria-disabled={!calendarActions} onClick={(event) => { if (!calendarActions) { event.preventDefault(); setCalendarError('Check the gala date and call time before adding it to your calendar.') } else setCalendarError('') }}><CalendarPlus size={14} />Google Calendar</a>
+        <button className="calendar-export-button" type="button" onClick={downloadCalendarFile}><Download size={14} />Download .ics</button>
+      </div>
+      {calendarError && <p className="calendar-export-error" role="alert">{calendarError}</p>}
+    </div>}
     {isPast && <div className="detail-section recap-editor">
       <div className="recap-heading"><div><h3>Proof of life</h3><p>Drop the album and save a little memory.</p></div><span className="recap-spark">✦</span></div>
       <label className="field-label recap-note-label">A note from the day<textarea maxLength={500} value={recapNote} onChange={(event) => setRecapNote(event.target.value)} placeholder="The best moment, funniest quote, or what we should do next…" /></label>

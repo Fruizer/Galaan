@@ -5,11 +5,14 @@ import type { Circle } from '../types'
 
 interface ProfileDialogProps {
   displayName: string
+  currentUserId: string
   circles: Circle[]
   theme: 'light' | 'dark'
   onThemeChange: (theme: 'light' | 'dark') => void
   onSaveName: (name: string) => void
   onResetDemo: () => void
+  email?: string
+  onSignOut?: () => void
   onClose: () => void
   transition: object
 }
@@ -18,7 +21,7 @@ function initialsFor(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || 'Y'
 }
 
-export function ProfileDialog({ displayName, circles, theme, onThemeChange, onSaveName, onResetDemo, onClose, transition }: ProfileDialogProps) {
+export function ProfileDialog({ displayName, currentUserId, circles, theme, onThemeChange, onSaveName, onResetDemo, email, onSignOut, onClose, transition }: ProfileDialogProps) {
   const [name, setName] = useState(displayName)
   const [error, setError] = useState('')
   const [today] = useState(() => {
@@ -27,10 +30,10 @@ export function ProfileDialog({ displayName, circles, theme, onThemeChange, onSa
   })
   const upcomingRsvps = useMemo(() => circles.flatMap((circle) => circle.galas.flatMap((gala) => {
     if (gala.date < today) return []
-    const rsvp = gala.rsvps.find((item) => item.memberId === 'you')
+    const rsvp = gala.rsvps.find((item) => item.memberId === currentUserId)
     if (!rsvp) return []
     return [{ circleName: circle.name, galaTitle: gala.title, date: gala.date, status: rsvp.status }]
-  })).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4), [circles, today])
+  })).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4), [circles, currentUserId, today])
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -41,7 +44,7 @@ export function ProfileDialog({ displayName, circles, theme, onThemeChange, onSa
   }
 
   return <ModalFrame title="Your profile" subtitle="A little corner for you in the barkada." onClose={onClose} transition={transition} className="profile-dialog">
-    <div className="profile-identity"><span className="profile-avatar">{initialsFor(displayName)}</span><div><strong>{displayName}</strong><span>Galaan demo profile</span></div></div>
+    <div className="profile-identity"><span className="profile-avatar">{initialsFor(displayName)}</span><div><strong>{displayName}</strong><span>{email ?? 'Galaan demo profile'}</span></div></div>
     <form className="profile-name-form" onSubmit={submit}>
       <label className="field-label">Display name<input maxLength={36} value={name} onChange={(event) => { setName(event.target.value); setError('') }} /></label>
       {error && <p className="form-error" role="alert">{error}</p>}
@@ -59,6 +62,6 @@ export function ProfileDialog({ displayName, circles, theme, onThemeChange, onSa
       <div className="profile-section-heading"><span><CalendarDays size={14} /> Your upcoming RSVPs</span><strong>{upcomingRsvps.length}</strong></div>
       {upcomingRsvps.length ? <div className="profile-rsvp-list">{upcomingRsvps.map((item) => <div className="profile-rsvp-row" key={`${item.circleName}-${item.galaTitle}`}><span><strong>{item.galaTitle}</strong><small>{item.circleName} · {new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(`${item.date}T12:00:00`))}</small></span><i className={`profile-rsvp-status ${item.status}`}>{item.status === 'not-going' ? 'Can’t go' : item.status}</i></div>)}</div> : <p className="profile-empty-rsvp">You haven’t RSVP’d to an upcoming gala yet.</p>}
     </section>
-    <div className="profile-reset-row"><div><strong>Reset the sample circles</strong><span>Clear your demo changes and start fresh.</span></div><button type="button" onClick={onResetDemo}><RotateCcw size={13} /> Reset</button></div>
+    {onSignOut ? <div className="profile-reset-row"><div><strong>Sign out of Galaan</strong><span>Your circles stay saved for next time.</span></div><button type="button" onClick={onSignOut}>Sign out</button></div> : <div className="profile-reset-row"><div><strong>Reset the sample circles</strong><span>Clear your demo changes and start fresh.</span></div><button type="button" onClick={onResetDemo}><RotateCcw size={13} /> Reset</button></div>}
   </ModalFrame>
 }

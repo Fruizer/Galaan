@@ -10,15 +10,18 @@ import { GalaDetails } from './components/GalaDetails'
 import { MonthCalendar } from './components/MonthCalendar'
 import { ProfileDialog } from './components/ProfileDialog'
 import { SignatureDialog } from './components/SignatureDialog'
-import { CURRENT_USER_ID, mockCircles } from './data/mockCircles'
+import { FirstCircleScreen, SignInScreen } from './components/AccountScreens'
 import { useBodyScrollLock } from './hooks/useBodyScrollLock'
-import type { Circle, Expense, Gala, GalaRecap, NewGalaInput, RSVP, RSVPStatus } from './types'
+import { createCircle, createCircleInvite, deleteExpense as deleteExpenseRow, deleteGala as deleteGalaRow, leaveCircle as leaveCircleRow, loadCircles, redeemCircleInvite, saveExpense as saveExpenseRow, saveGala as saveGalaRow, saveRecap as saveRecapRow, setPayment, updateProfile, upsertRsvp } from './lib/galaanData'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
+import type { Circle, Expense, Gala, GalaRecap, NewGalaInput, RSVPStatus } from './types'
+import type { Session } from '@supabase/supabase-js'
 import './App.css'
 
-const STORAGE_KEY = 'galaan-demo-v3'
 const PROFILE_STORAGE_KEY = 'galaan-profile-v1'
 const THEME_STORAGE_KEY = 'galaan-theme-v1'
-const INITIAL_MONTH = new Date(2026, 10, 1)
+const INITIAL_MONTH = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+const EMPTY_CIRCLE: Circle = { id: '', name: '', subtitle: '', color: '#5b7258', members: [], galas: [] }
 
 type ThemeMode = 'light' | 'dark'
 
@@ -45,14 +48,19 @@ function readSavedTheme(): ThemeMode {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-function readSavedCircles(): Circle[] {
+function captureInviteToken() {
   try {
-    const value = localStorage.getItem(STORAGE_KEY)
-    if (!value) return mockCircles
-    const parsed: unknown = JSON.parse(value)
-    return Array.isArray(parsed) && parsed.length ? (parsed as Circle[]) : mockCircles
+    const params = new URLSearchParams(window.location.search)
+    const tokenFromLink = params.get('invite')
+    if (tokenFromLink && /^[0-9a-f]{64}$/.test(tokenFromLink)) {
+      sessionStorage.setItem('galaan-pending-invite', tokenFromLink)
+      params.delete('invite')
+      const nextSearch = params.toString()
+      window.history.replaceState(null, '', `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`)
+    }
+    return Boolean(sessionStorage.getItem('galaan-pending-invite'))
   } catch {
-    return mockCircles
+    return false
   }
 }
 
@@ -73,8 +81,16 @@ function isUnlocked(gala: Gala) {
 }
 
 function App() {
-  const [circles, setCircles] = useState<Circle[]>(readSavedCircles)
-  const [activeCircleId, setActiveCircleId] = useState('college')
+  const [circles, setCircles] = useState<Circle[]>([])
+  const [activeCircleId, setActiveCircleId] = useState('')
+  const [session, setSession] = useState<Session | null>(null)
+  const [authLoaded, setAuthLoaded] = useState(false)
+  const [dataLoaded, setDataLoaded] = useState(false)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [dataError, setDataError] = useState('')
+  const [invitePending, setInvitePending] = useState(captureInviteToken)
+  const [actionError, setActionError] = useState('')
   const [month, setMonth] = useState(INITIAL_MONTH)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedGalaId, setSelectedGalaId] = useState<string | null>(null)
@@ -95,12 +111,90 @@ function App() {
   useBodyScrollLock(Boolean(selectedGalaId), '(max-width: 720px)')
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(circles))
-  }, [circles])
+    if (!supabase) { setAuthLoaded(true); return }
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) setAuthError(error.message)
+      setSession(data.session)
+      setAuthLoaded(true)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setAuthLoaded(true)
+      setAuthError('')
+    })
+    return () => subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
-    localStorage.setItem(PROFILE_STORAGE_KEY, displayName)
-  }, [displayName])
+    const client = supabase
+    if (!session || !client) { setCircles([]); setDataLoaded(Boolean(authLoaded)); return }
+    let cancelled = false
+    let refreshTimer: number | undefined
+    setDataLoaded(false)
+    setDataError('')
+    async function refresh() {
+      try {
+        const [nextCircles, profileResult] = await Promise.all([
+          loadCircles(client!, session!.user.id),
+          client!.from('profiles').select('display_name').eq('id', session!.user.id).maybeSingle(),
+        ])
+        if (profileResult.error) throw new Error(profileResult.error.message)
+        if (cancelled) return
+        setCircles(nextCircles)
+        setActiveCircleId((current) => nextCircles.some((circle) => circle.id === current) ? current : nextCircles[0]?.id ?? '')
+        const profile = profileResult.data as { display_name?: string } | null
+        const metadataName = session!.user.user_metadata.full_name ?? session!.user.user_metadata.name
+        setDisplayName(profile?.display_name ?? (typeof metadataName === 'string' ? metadataName : session!.user.email?.split('@')[0] ?? 'You'))
+        setDataLoaded(true)
+      } catch (error) {
+        if (cancelled) return
+        setDataError(error instanceof Error ? error.message : 'Could not load your circles.')
+        setDataLoaded(true)
+      }
+    }
+    void refresh()
+    const channel = client.channel(`galaan-live-${session.user.id}`)
+    for (const table of ['circles', 'circle_memberships', 'profiles', 'galas', 'rsvps', 'expenses', 'expense_payments', 'gala_albums']) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+        if (refreshTimer) window.clearTimeout(refreshTimer)
+        refreshTimer = window.setTimeout(() => { void refresh() }, 180)
+      })
+    }
+    channel.subscribe()
+    return () => {
+      cancelled = true
+      if (refreshTimer) window.clearTimeout(refreshTimer)
+      void client.removeChannel(channel)
+    }
+  }, [session, authLoaded])
+
+  useEffect(() => {
+    if (!session || !supabase) return
+    let cancelled = false
+    async function redeemPendingInvite() {
+      let token = ''
+      try { token = sessionStorage.getItem('galaan-pending-invite') ?? '' } catch { return }
+      if (!token) return
+      try {
+        const circleId = await redeemCircleInvite(supabase!, token)
+        try { sessionStorage.removeItem('galaan-pending-invite') } catch { /* ignore */ }
+        if (cancelled) return
+        setInvitePending(false)
+        const loaded = await loadCircles(supabase!, session!.user.id)
+        if (cancelled) return
+        setCircles(loaded)
+        setActiveCircleId(circleId)
+      } catch (error) {
+        try { sessionStorage.removeItem('galaan-pending-invite') } catch { /* ignore */ }
+        if (!cancelled) {
+          setInvitePending(false)
+          setActionError(error instanceof Error ? error.message : 'That invite link could not be used.')
+        }
+      }
+    }
+    void redeemPendingInvite()
+    return () => { cancelled = true }
+  }, [session])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -114,7 +208,7 @@ function App() {
     if (themeMeta) themeMeta.content = theme === 'dark' ? '#171b19' : '#f1f1eb'
   }, [theme])
 
-  const activeCircle = circles.find((circle) => circle.id === activeCircleId) ?? circles[0]
+  const activeCircle = circles.find((circle) => circle.id === activeCircleId) ?? circles[0] ?? EMPTY_CIRCLE
   const selectedGala = activeCircle.galas.find((gala) => gala.id === selectedGalaId) ?? null
   const signatureGala = activeCircle.galas.find((gala) => gala.id === signatureGalaId) ?? null
   const currentMonthKey = getMonthKey(month)
@@ -137,18 +231,32 @@ function App() {
   const visibleUpcoming = selectedDate ? [] : upcomingMonths.map(([key, galas]) => [key, galas.filter(matchesFilter)] as [string, Gala[]]).filter(([, galas]) => galas.length > 0)
   const pastGalas = activeCircle.galas.filter((gala) => gala.date < todayKey).sort((a, b) => b.date.localeCompare(a.date))
 
-  function updateActiveCircle(update: (circle: Circle) => Circle) {
-    setCircles((current) => current.map((circle) => circle.id === activeCircleId ? update(circle) : circle))
+  async function refreshCircles(preferredId?: string) {
+    if (!supabase || !session) return []
+    const nextCircles = await loadCircles(supabase, session.user.id)
+    setCircles(nextCircles)
+    setActiveCircleId((current) => preferredId && nextCircles.some((circle) => circle.id === preferredId)
+      ? preferredId
+      : nextCircles.some((circle) => circle.id === current) ? current : nextCircles[0]?.id ?? '')
+    return nextCircles
   }
 
-  function commitRsvp(galaId: string, signature: string) {
-    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => {
-      if (gala.id !== galaId) return gala
-      const nextRsvp: RSVP = { memberId: CURRENT_USER_ID, status: 'going', signature }
-      return { ...gala, rsvps: gala.rsvps.some((rsvp) => rsvp.memberId === CURRENT_USER_ID)
-        ? gala.rsvps.map((rsvp) => rsvp.memberId === CURRENT_USER_ID ? nextRsvp : rsvp)
-        : [...gala.rsvps, nextRsvp] }
-    }) }))
+  async function mutate(task: () => Promise<unknown>) {
+    if (!supabase || !session) return false
+    try {
+      await task()
+      await refreshCircles()
+      setActionError('')
+      return true
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'That change could not be saved.')
+      return false
+    }
+  }
+
+  async function commitRsvp(galaId: string, signature: string) {
+    const saved = await mutate(() => upsertRsvp(supabase!, galaId, session!.user.id, 'going', signature))
+    if (!saved) return
     setIsSignatureOpen(false)
     setSignatureGalaId(null)
     setSavedNotice(true)
@@ -156,114 +264,107 @@ function App() {
   }
 
   function setOwnRsvp(galaId: string, status: RSVPStatus) {
-    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== galaId ? gala : {
-      ...gala,
-      rsvps: gala.rsvps.some((rsvp) => rsvp.memberId === CURRENT_USER_ID)
-        ? gala.rsvps.map((rsvp) => rsvp.memberId === CURRENT_USER_ID ? { memberId: CURRENT_USER_ID, status, ...(status === 'going' && rsvp.signature ? { signature: rsvp.signature } : {}) } : rsvp)
-        : [...gala.rsvps, { memberId: CURRENT_USER_ID, status }],
-    }) }))
+    void mutate(() => upsertRsvp(supabase!, galaId, session!.user.id, status))
   }
 
   function togglePaid(galaId: string, expenseId: string, memberId: string) {
-    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== galaId ? gala : {
-      ...gala, expenses: gala.expenses.map((expense) => expense.id !== expenseId ? expense : {
-        ...expense, paidMemberIds: expense.paidMemberIds.includes(memberId)
-          ? expense.paidMemberIds.filter((id) => id !== memberId) : [...expense.paidMemberIds, memberId],
-      }),
-    }) }))
+    if (memberId !== session?.user.id && activeCircle.role !== 'organizer') {
+      setActionError('Only a circle organizer can update someone else’s payment.')
+      return
+    }
+    const expense = activeCircle.galas.find((gala) => gala.id === galaId)?.expenses.find((item) => item.id === expenseId)
+    if (!expense || !session) return
+    void mutate(() => setPayment(supabase!, expenseId, memberId, !expense.paidMemberIds.includes(memberId)))
   }
 
   function saveExpense(galaId: string, expense: Omit<Expense, 'id' | 'paidMemberIds'>, expenseId?: string) {
-    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== galaId ? gala : {
-      ...gala,
-      expenses: expenseId
-        ? gala.expenses.map((item) => item.id === expenseId ? { ...item, ...expense } : item)
-        : [...gala.expenses, { ...expense, id: `expense-${crypto.randomUUID()}`, paidMemberIds: [] }],
-    }) }))
-    setExpenseEditor(null)
+    void mutate(() => saveExpenseRow(supabase!, galaId, session!.user.id, expense, expenseId)).then((saved) => {
+      if (saved) setExpenseEditor(null)
+    })
   }
 
-  function deleteExpense(galaId: string, expenseId: string) {
-    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== galaId ? gala : {
-      ...gala, expenses: gala.expenses.filter((expense) => expense.id !== expenseId),
-    }) }))
+  function deleteExpense(_galaId: string, expenseId: string) {
+    void mutate(() => deleteExpenseRow(supabase!, expenseId))
   }
 
   function saveRecap(galaId: string, recap: GalaRecap) {
-    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id === galaId ? { ...gala, recap } : gala) }))
+    void mutate(() => saveRecapRow(supabase!, galaId, session!.user.id, recap))
   }
 
   function saveGala(input: NewGalaInput) {
-    if (editingGalaId) {
-      updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.map((gala) => gala.id !== editingGalaId ? gala : {
-        ...gala,
-        ...input,
-        expenses: input.expenses.map((draft) => {
-          const existing = gala.expenses.find((expense) => expense.label.toLowerCase() === draft.label.toLowerCase() && expense.category === draft.category)
-          return existing ? { ...existing, ...draft } : { ...draft, id: `expense-${crypto.randomUUID()}`, paidMemberIds: [] }
-        }),
-      }) }))
-      setIsCreateOpen(false)
-      setEditingGalaId(null)
+    const current = editingGalaId ? activeCircle.galas.find((gala) => gala.id === editingGalaId) : undefined
+    void (async () => {
+      let galaId = current?.id ?? ''
+      const saved = await mutate(async () => { galaId = await saveGalaRow(supabase!, activeCircle.id, session!.user.id, input, current) })
+      if (!saved) return
       setMonth(new Date(Number(input.date.slice(0, 4)), Number(input.date.slice(5, 7)) - 1, 1))
       setSelectedDate(input.date)
-      return
-    }
-    const newGala: Gala = {
-      ...input,
-      id: `gala-${crypto.randomUUID()}`,
-      createdBy: CURRENT_USER_ID,
-      rsvps: [],
-      expenses: input.expenses.map((expense) => ({ ...expense, id: `expense-${crypto.randomUUID()}`, paidMemberIds: [] })),
-    }
-    updateActiveCircle((circle) => ({ ...circle, galas: [...circle.galas, newGala] }))
-    setMonth(new Date(Number(input.date.slice(0, 4)), Number(input.date.slice(5, 7)) - 1, 1))
-    setSelectedDate(input.date)
-    setIsCreateOpen(false)
-    setSelectedGalaId(newGala.id)
+      if (!current) setSelectedGalaId(galaId)
+      setIsCreateOpen(false)
+      setEditingGalaId(null)
+    })()
   }
 
   function deleteGala(galaId: string) {
-    updateActiveCircle((circle) => ({ ...circle, galas: circle.galas.filter((gala) => gala.id !== galaId) }))
-    setSelectedGalaId(null)
+    void mutate(() => deleteGalaRow(supabase!, galaId)).then((saved) => {
+      if (saved) setSelectedGalaId(null)
+    })
   }
 
   function leaveCircle(circleId: string) {
-    if (circles.length <= 1) return
     const circle = circles.find((item) => item.id === circleId)
     if (!circle || !window.confirm(`Leave ${circle.name}? It will disappear from your circle switcher.`)) return
-    const remaining = circles.filter((item) => item.id !== circleId)
-    setCircles(remaining)
-    if (activeCircleId === circleId) {
-      setActiveCircleId(remaining[0].id)
-      setMonth(INITIAL_MONTH)
-      setSelectedDate(null)
-      setSelectedGalaId(null)
-    }
-    setIsCircleHubOpen(false)
+    void (async () => {
+      const saved = await mutate(() => leaveCircleRow(supabase!, circleId))
+      if (saved) {
+        setIsCircleHubOpen(false)
+        setSelectedDate(null)
+        setSelectedGalaId(null)
+      }
+    })()
   }
 
   function saveProfileName(name: string) {
     const cleaned = name.trim()
-    const initials = initialsFor(cleaned)
-    setDisplayName(cleaned)
-    setCircles((current) => current.map((circle) => ({
-      ...circle,
-      members: circle.members.map((member) => member.id === CURRENT_USER_ID ? { ...member, name: cleaned, initials } : member),
-    })))
+    if (!session) return
+    void mutate(() => updateProfile(supabase!, session.user.id, cleaned)).then((saved) => {
+      if (saved) setDisplayName(cleaned)
+    })
   }
 
-  function resetDemoData() {
-    if (!window.confirm('Reset all circles, RSVPs, recaps, expenses, and your profile to the original sample data?')) return
-    setCircles(mockCircles)
-    setDisplayName('You')
-    setActiveCircleId('college')
-    setMonth(INITIAL_MONTH)
-    setSelectedDate(null)
-    setSelectedGalaId(null)
-    setStatusFilter('all')
-    setIsProfileOpen(false)
+  async function createNewCircle() {
+    const name = window.prompt('What should this circle be called?')
+    if (!name || name.trim().length < 2) return
+    try {
+      const circleId = await createCircle(supabase!, name)
+      await refreshCircles(circleId)
+      setActionError('')
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not create that circle.')
+    }
   }
+
+  async function signInWithGoogle() {
+    if (!supabase) { setAuthError('Supabase connection settings are missing.'); return }
+    setAuthBusy(true)
+    setAuthError('')
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: window.location.origin } })
+    if (error) { setAuthError(error.message); setAuthBusy(false) }
+  }
+
+  async function signOut() {
+    if (!supabase) return
+    const { error } = await supabase.auth.signOut()
+    if (error) setActionError(error.message)
+    else { setCircles([]); setActiveCircleId(''); setSelectedGalaId(null); setIsProfileOpen(false) }
+  }
+
+  async function createInvite() {
+    if (!supabase || !activeCircle.id) throw new Error('Choose a circle first.')
+    return createCircleInvite(supabase, activeCircle.id)
+  }
+
+  function resetDemoData() {}
 
   function switchCircle(circleId: string) {
     setActiveCircleId(circleId)
@@ -288,6 +389,12 @@ function App() {
 
   const dialogTransition = reduceMotion ? { duration: 0.01 } : { type: 'spring' as const, duration: 0.42, bounce: 0.12 }
 
+  if (!isSupabaseConfigured) return <SignInScreen loading={false} invitePending={invitePending} error="Galaan’s Supabase settings are missing. Add the project URL and publishable key to the deployment settings." onGoogleSignIn={() => {}} />
+  if (!authLoaded || !dataLoaded || (session && invitePending)) return <main className="account-screen"><section className="account-card"><a className="brand-lockup account-brand" href="#home"><span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span></a><h1>{authLoaded ? 'Getting your circles ready…' : 'Opening your barkada space…'}</h1><p>Loading your private plans and RSVPs.</p></section></main>
+  if (!session) return <SignInScreen loading={authBusy} error={authError} invitePending={invitePending} onGoogleSignIn={() => { void signInWithGoogle() }} />
+  if (dataError) return <main className="account-screen"><section className="account-card"><h1>We couldn’t load your circles.</h1><p>{dataError}</p><button className="primary-button" type="button" onClick={() => window.location.reload()}>Try again</button><button className="account-signout" type="button" onClick={() => { void signOut() }}>Sign out</button></section></main>
+  if (circles.length === 0) return <FirstCircleScreen loading={false} error={actionError} onCreate={(name) => { void (async () => { try { const circleId = await createCircle(supabase!, name); await refreshCircles(circleId); setActionError('') } catch (error) { setActionError(error instanceof Error ? error.message : 'Could not create that circle.') } })() }} onSignOut={() => { void signOut() }} />
+
   return (
     <div className="app-shell" style={{ '--circle-color': activeCircle.color } as React.CSSProperties}>
       <header className="topbar">
@@ -295,12 +402,14 @@ function App() {
           <span className="brand-mark" aria-hidden="true"><span /><span /><span /></span><span>galaan</span>
         </a>
         <div className="topbar-context">
-          <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} />
+          <CircleSwitcher circles={circles} activeCircle={activeCircle} onSelect={switchCircle} onCreate={() => { void createNewCircle() }} />
           <button className="invite-trigger" type="button" onClick={() => setIsCircleHubOpen(true)}><UsersRound size={14} /><span>Members</span></button>
         </div>
         <button className="profile-trigger" type="button" aria-label="Open profile" onClick={() => setIsProfileOpen(true)}><span>{initialsFor(displayName)}</span><span className="profile-trigger-name">{displayName}</span><UserRound className="profile-trigger-icon" size={14} /></button>
         <button className="top-create-button" type="button" aria-label="Plan a gala" onClick={() => setIsCreateOpen(true)}><Plus size={17} strokeWidth={2.3} /><span>Plan a gala</span></button>
       </header>
+
+      {actionError && <div className="action-error-banner" role="alert"><span>{actionError}</span><button type="button" aria-label="Dismiss message" onClick={() => setActionError('')}>×</button></div>}
 
       <main id="home" className="dashboard-wrap">
         <div className="welcome-row">
@@ -344,8 +453,8 @@ function App() {
       <AnimatePresence>
         {isCreateOpen && <CreateGalaDialog key={editingGalaId ?? 'new-gala'} initial={activeCircle.galas.find((gala) => gala.id === editingGalaId)} onClose={() => { setIsCreateOpen(false); setEditingGalaId(null) }} onCreate={saveGala} transition={dialogTransition} />}
         {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}
-        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={circles.length > 1} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
-        {isProfileOpen && <ProfileDialog displayName={displayName} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
+        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={activeCircle.role !== 'organizer' || activeCircle.members.filter((member) => member.role === 'organizer').length > 1} onCreateInvite={createInvite} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
+        {isProfileOpen && <ProfileDialog displayName={displayName} currentUserId={session.user.id} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} email={session.user.email} onSignOut={() => { void signOut() }} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
         {expenseEditor && <ExpenseEditorDialog key={`${expenseEditor.galaId}-${expenseEditor.expense?.id ?? 'new'}`} initial={expenseEditor.expense} onClose={() => setExpenseEditor(null)} onSave={(expense) => saveExpense(expenseEditor.galaId, expense, expenseEditor.expense?.id)} transition={dialogTransition} />}
       </AnimatePresence>
       <AnimatePresence>{savedNotice && <motion.div className="saved-toast" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={{ duration: 0.18 }}><span className="toast-check">✓</span> Pirma saved. You’re on the list.</motion.div>}</AnimatePresence>

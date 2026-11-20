@@ -75,7 +75,10 @@ export function SignatureDialog({ gala, onClose, onConfirm, transition }: Signat
   }
 
   function confirmSignature() {
-    if (canvasRef.current && hasInk) onConfirm(canvasRef.current.toDataURL('image/png'))
+    if (!canvasRef.current || !hasInk) return
+    const canvas = canvasRef.current
+    const compact = canvas.toDataURL('image/webp', 0.45)
+    onConfirm(compact.length <= 16000 ? compact : canvas.toDataURL('image/webp', 0.25))
   }
 
   return <ModalFrame title="Put your pirma on it." subtitle={`A little doodle says you’re in for ${gala.title}.`} onClose={onClose} transition={transition} className="signature-dialog">

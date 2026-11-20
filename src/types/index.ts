@@ -14,6 +14,7 @@ export interface Member {
   initials: string
   color: string
   isYou?: boolean
+  role?: 'organizer' | 'member'
 }
 
 export interface RSVP {
@@ -63,6 +64,7 @@ export interface Circle {
   name: string
   subtitle: string
   color: string
+  role?: 'organizer' | 'member'
   members: Member[]
   galas: Gala[]
 }

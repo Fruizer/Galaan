@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, Link2, UsersRound } from 'lucide-react'
 import { ModalFrame } from './ModalFrame'
 import { AvatarContent } from './AvatarContent'
@@ -6,15 +6,14 @@ import type { Circle } from '../types'
 
 interface CircleHubDialogProps {
   circle: Circle
-  canLeave: boolean
   onCreateInvite: () => Promise<string>
   onCreateCode: () => Promise<{ code: string; expires_at: string }>
-  onLeave: () => void
+  onLeave: () => Promise<boolean>
   onClose: () => void
   transition: object
 }
 
-export function CircleHubDialog({ circle, canLeave, onCreateInvite, onCreateCode, onLeave, onClose, transition }: CircleHubDialogProps) {
+export function CircleHubDialog({ circle, onCreateInvite, onCreateCode, onLeave, onClose, transition }: CircleHubDialogProps) {
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState(false)
   const [inviteUrl, setInviteUrl] = useState('')
@@ -23,6 +22,32 @@ export function CircleHubDialog({ circle, canLeave, onCreateInvite, onCreateCode
   const [codeBusy, setCodeBusy] = useState(false)
   const [codeError, setCodeError] = useState('')
   const [codeCopied, setCodeCopied] = useState(false)
+  const [leavePresses, setLeavePresses] = useState(0)
+  const [leaveBusy, setLeaveBusy] = useState(false)
+  const [leaveError, setLeaveError] = useState('')
+  const leaveResetTimer = useRef<number | undefined>(undefined)
+
+  useEffect(() => () => window.clearTimeout(leaveResetTimer.current), [])
+
+  function pressLeave() {
+    if (leaveBusy) return
+    const nextPresses = leavePresses + 1
+    window.clearTimeout(leaveResetTimer.current)
+    if (nextPresses >= 3) {
+      setLeavePresses(0)
+      setLeaveBusy(true)
+      setLeaveError('')
+      void onLeave().then((left) => {
+        if (!left) setLeaveError('Could not leave this circle. Check your connection and try again.')
+      }).catch(() => {
+        setLeaveError('Could not leave this circle. Check your connection and try again.')
+      }).finally(() => setLeaveBusy(false))
+      return
+    }
+
+    setLeavePresses(nextPresses)
+    leaveResetTimer.current = window.setTimeout(() => setLeavePresses(0), 2400)
+  }
 
   async function makeCode() {
     setCodeBusy(true); setCodeError('')
@@ -60,8 +85,7 @@ export function CircleHubDialog({ circle, canLeave, onCreateInvite, onCreateCode
     <div className="circle-member-list">{circle.members.map((member) => <div className="circle-member-row" key={`${circle.id}-${member.id}`}>
       <i style={{ backgroundColor: member.color }}><AvatarContent src={member.avatarUrl} fallback={member.initials} /></i>
       <span><strong>{member.name}</strong><small>{member.isYou ? 'You' : 'Barkada member'}</small></span>
-      {member.role === 'organizer' && <span className="member-role-badge">Organizer</span>}
     </div>)}</div>
-    <div className="leave-circle-row"><div><strong>Leave this circle</strong><span>{canLeave ? 'You can join again if someone invites you.' : 'Promote another organizer before leaving.'}</span></div><button type="button" disabled={!canLeave} onClick={onLeave}>Leave</button></div>
+    <div className="leave-circle-row"><div><strong>Leave this circle</strong><span>{leaveBusy ? 'Leaving the circle…' : leaveError || (leavePresses === 0 ? 'Press Leave three times to confirm.' : leavePresses === 1 ? 'Tap again to continue · 2 of 3' : 'One more tap leaves the circle · 3 of 3')}</span></div><button type="button" disabled={leaveBusy} onClick={pressLeave}>{leaveBusy ? 'Leaving…' : leavePresses === 0 ? 'Leave · 1/3' : leavePresses === 1 ? 'Tap again · 2/3' : 'Confirm leave · 3/3'}</button></div>
   </ModalFrame>
 }

@@ -30,7 +30,6 @@ const EMPTY_CIRCLE: Circle = { id: '', name: '', subtitle: '', color: '#5b7258',
 
 type ThemeMode = 'light' | 'dark'
 type ConfirmAction =
-  | { kind: 'leave-circle'; circleId: string; name: string }
   | { kind: 'delete-gala'; galaId: string; name: string }
   | { kind: 'delete-expense'; expenseId: string; name: string }
 
@@ -353,20 +352,22 @@ function App() {
     })()
   }
 
-  function leaveCircle(circleId: string) {
-    const circle = circles.find((item) => item.id === circleId)
-    if (circle) setConfirmAction({ kind: 'leave-circle', circleId, name: circle.name })
+  async function leaveCircle(circleId: string): Promise<boolean> {
+    const left = await mutate(() => leaveCircleRow(supabase!, circleId))
+    if (!left) return false
+    setIsCircleHubOpen(false)
+    setSelectedDate(null)
+    setSelectedGalaId(null)
+    return true
   }
 
   async function confirmChange() {
     if (!supabase || !confirmAction) throw new Error('Sign in again to make this change.')
     const action = confirmAction
-    if (action.kind === 'leave-circle') await leaveCircleRow(supabase, action.circleId)
     if (action.kind === 'delete-gala') await deleteGalaRow(supabase, action.galaId)
     if (action.kind === 'delete-expense') await deleteExpenseRow(supabase, action.expenseId)
     await refreshCircles()
     setActionError('')
-    if (action.kind === 'leave-circle') { setIsCircleHubOpen(false); setSelectedDate(null); setSelectedGalaId(null) }
     if (action.kind === 'delete-gala') setSelectedGalaId(null)
   }
 
@@ -545,10 +546,10 @@ function App() {
         {isCreateCircleOpen && <CreateCircleDialog onCreate={createNewCircle} onClose={() => setIsCreateCircleOpen(false)} transition={dialogTransition} />}
         {isTourOpen && <TourDialog circleName={activeCircle.name} hasGalas={activeCircle.galas.length > 0} onFinish={finishTour} transition={dialogTransition} />}
         {isSignatureOpen && signatureGala && <SignatureDialog gala={signatureGala} onClose={() => setIsSignatureOpen(false)} onConfirm={(signature) => commitRsvp(signatureGala.id, signature)} transition={dialogTransition} />}
-        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} canLeave={activeCircle.role !== 'organizer' || activeCircle.members.filter((member) => member.role === 'organizer').length > 1} onCreateCode={() => createJoinCode(supabase!, activeCircle.id)} onCreateInvite={createInvite} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
+        {isCircleHubOpen && <CircleHubDialog circle={activeCircle} onCreateCode={() => createJoinCode(supabase!, activeCircle.id)} onCreateInvite={createInvite} onLeave={() => leaveCircle(activeCircle.id)} onClose={() => setIsCircleHubOpen(false)} transition={dialogTransition} />}
         {isProfileOpen && <ProfileDialog displayName={displayName} currentUserId={session.user.id} avatarUrl={activeCircle.members.find((member) => member.id === session.user.id)?.avatarUrl} onChangeAvatar={changeProfileAvatar} circles={circles} theme={theme} onThemeChange={setTheme} onSaveName={saveProfileName} onResetDemo={resetDemoData} email={session.user.email} onReplayTour={() => { setIsProfileOpen(false); setIsTourOpen(true) }} onSignOut={() => { void signOut() }} onClose={() => setIsProfileOpen(false)} transition={dialogTransition} />}
         {expenseEditor && <ExpenseEditorDialog key={`${expenseEditor.galaId}-${expenseEditor.expense?.id ?? 'new'}`} initial={expenseEditor.expense} onClose={() => setExpenseEditor(null)} onSave={(expense) => saveExpense(expenseEditor.galaId, expense, expenseEditor.expense?.id)} transition={dialogTransition} />}
-        {confirmAction && <ConfirmDialog key={`${confirmAction.kind}-${confirmAction.kind === 'leave-circle' ? confirmAction.circleId : confirmAction.kind === 'delete-gala' ? confirmAction.galaId : confirmAction.expenseId}`} title={confirmAction.kind === 'leave-circle' ? `Leave ${confirmAction.name}?` : confirmAction.kind === 'delete-gala' ? `Delete ${confirmAction.name}?` : `Remove ${confirmAction.name}?`} message={confirmAction.kind === 'leave-circle' ? 'This circle will disappear from your switcher. Someone can invite you back later.' : confirmAction.kind === 'delete-gala' ? 'The gala, its RSVPs, expenses, and recap will be removed for everyone in this circle.' : 'This cost and its payment statuses will be removed from the ambagan.'} confirmLabel={confirmAction.kind === 'leave-circle' ? 'Leave circle' : confirmAction.kind === 'delete-gala' ? 'Delete gala' : 'Remove expense'} onConfirm={confirmChange} onClose={() => setConfirmAction(null)} transition={dialogTransition} />}
+        {confirmAction && <ConfirmDialog key={`${confirmAction.kind}-${confirmAction.kind === 'delete-gala' ? confirmAction.galaId : confirmAction.expenseId}`} title={confirmAction.kind === 'delete-gala' ? `Delete ${confirmAction.name}?` : `Remove ${confirmAction.name}?`} message={confirmAction.kind === 'delete-gala' ? 'The gala, its RSVPs, expenses, and recap will be removed for everyone in this circle.' : 'This cost and its payment statuses will be removed from the ambagan.'} confirmLabel={confirmAction.kind === 'delete-gala' ? 'Delete gala' : 'Remove expense'} onConfirm={confirmChange} onClose={() => setConfirmAction(null)} transition={dialogTransition} />}
       </AnimatePresence>
       <AnimatePresence>{savedNotice && <motion.div className="saved-toast" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 5 }} transition={{ duration: 0.18 }}><span className="toast-check">✓</span> Pirma saved. You’re on the list.</motion.div>}</AnimatePresence>
     </div>

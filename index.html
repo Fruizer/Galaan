@@ -9,8 +9,7 @@
     <script>
       try {
         const savedTheme = localStorage.getItem('galaan-theme-v1')
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) document.documentElement.dataset.theme = 'dark'
+        if (savedTheme === 'dark') document.documentElement.dataset.theme = 'dark'
       } catch {}
     </script>
     <meta name="description" content="Make time for your people. Plan galas, RSVP with a pirma, and keep your barkada in sync." />

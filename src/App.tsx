@@ -52,9 +52,9 @@ function readSavedTheme(): ThemeMode {
     const saved = localStorage.getItem(THEME_STORAGE_KEY)
     if (saved === 'light' || saved === 'dark') return saved
   } catch {
-    // Fall through to the operating system preference.
+    // Use the app's light default when storage is unavailable.
   }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return 'light'
 }
 
 function captureInviteToken() {

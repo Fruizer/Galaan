@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Local design tooling and generated video workspaces
+.impeccable/
+.impeccable-runtime/
+/galaan-motion-video/
+/galaan-trailer/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

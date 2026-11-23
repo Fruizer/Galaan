@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { ArrowDownRight, CalendarDays, CirclePlus, MapPin, PartyPopper, Plus, Sparkles, UserRound, UsersRound } from 'lucide-react'
+import { ArrowDownRight, CalendarDays, ChevronDown, CirclePlus, MapPin, PartyPopper, Plus, Sparkles, UserRound, UsersRound } from 'lucide-react'
 import { CircleHubDialog } from './components/CircleHubDialog'
 import { CircleSwitcher } from './components/CircleSwitcher'
 import { AvatarContent } from './components/AvatarContent'
@@ -118,6 +118,7 @@ function App() {
   const [signatureGalaId, setSignatureGalaId] = useState<string | null>(null)
   const [expenseEditor, setExpenseEditor] = useState<{ galaId: string; expense?: Expense } | null>(null)
   const [statusFilter, setStatusFilter] = useState<'all' | 'drawing' | 'color'>('all')
+  const [pastExpanded, setPastExpanded] = useState(false)
   const [savedNotice, setSavedNotice] = useState(false)
   const [todayKey] = useState(() => getDateKey(new Date()))
   const reduceMotion = useReducedMotion()
@@ -262,6 +263,7 @@ function App() {
   const selectedGala = activeCircle.galas.find((gala) => gala.id === selectedGalaId) ?? null
   const signatureGala = activeCircle.galas.find((gala) => gala.id === signatureGalaId) ?? null
   const currentMonthKey = getMonthKey(month)
+  const monthFeedTitle = currentMonthKey === todayKey.slice(0, 7) ? 'This month’s galas' : `${formatMonth(month)} galas`
 
   const monthGalas = useMemo(
     () => activeCircle.galas.filter((gala) => gala.date.slice(0, 7) === currentMonthKey).sort((a, b) => a.date.localeCompare(b.date)),
@@ -277,9 +279,16 @@ function App() {
   }, [activeCircle.galas, currentMonthKey])
 
   const matchesFilter = (gala: Gala) => statusFilter === 'all' || (statusFilter === 'color' ? isUnlocked(gala) : !isUnlocked(gala))
-  const visibleMonthGalas = (selectedDate ? monthGalas.filter((gala) => gala.date === selectedDate) : monthGalas).filter(matchesFilter)
+  const monthFeedGalas = selectedDate ? monthGalas.filter((gala) => gala.date === selectedDate) : monthGalas.filter((gala) => gala.date >= todayKey)
+  const visibleMonthGalas = monthFeedGalas.filter(matchesFilter)
   const visibleUpcoming = selectedDate ? [] : upcomingMonths.map(([key, galas]) => [key, galas.filter(matchesFilter)] as [string, Gala[]]).filter(([, galas]) => galas.length > 0)
   const pastGalas = activeCircle.galas.filter((gala) => gala.date < todayKey).sort((a, b) => b.date.localeCompare(a.date))
+  const visiblePastGalas = selectedDate ? [] : pastGalas.filter(matchesFilter)
+  const pastGalasByMonth = new Map<string, Gala[]>()
+  visiblePastGalas.forEach((gala) => {
+    const key = gala.date.slice(0, 7)
+    pastGalasByMonth.set(key, [...(pastGalasByMonth.get(key) ?? []), gala])
+  })
 
   async function refreshCircles(preferredId?: string) {
     if (!supabase || !session) return []
@@ -512,7 +521,7 @@ function App() {
           <section className="calendar-column" aria-label="Circle calendar and galas">
             <MonthCalendar month={month} galas={activeCircle.galas} selectedDate={selectedDate} onSelectDate={setSelectedDate} onShiftMonth={shiftMonth} />
             <section className="gala-feed" aria-labelledby="month-feed-title">
-              <div className="feed-heading-row"><div><h2 id="month-feed-title">This month’s galas</h2><p>{selectedDate ? `Plans for ${new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(`${selectedDate}T12:00:00`))}` : `${monthGalas.length} ${monthGalas.length === 1 ? 'plan' : 'plans'} on the calendar`}</p></div><div className="feed-heading-actions">{selectedDate && <button className="text-action" type="button" onClick={() => setSelectedDate(null)}>Show all</button>}<button className="mobile-fab" type="button" onClick={() => setIsCreateOpen(true)} aria-label="Plan a gala"><CirclePlus size={18} /><span>Plan a gala</span></button></div></div>
+              <div className="feed-heading-row"><div><h2 id="month-feed-title">{monthFeedTitle}</h2><p>{selectedDate ? `Plans for ${new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric' }).format(new Date(`${selectedDate}T12:00:00`))}` : `${visibleMonthGalas.length} upcoming ${visibleMonthGalas.length === 1 ? 'plan' : 'plans'} in ${formatMonth(month)}`}</p></div><div className="feed-heading-actions">{selectedDate && <button className="text-action" type="button" onClick={() => setSelectedDate(null)}>Show all</button>}<button className="mobile-fab" type="button" onClick={() => setIsCreateOpen(true)} aria-label="Plan a gala"><CirclePlus size={18} /><span>Plan a gala</span></button></div></div>
               <div className="feed-filters" role="group" aria-label="Filter galas by quorum status">{([['all', 'All plans'], ['drawing', 'Drawing'], ['color', 'May Kulay Na']] as const).map(([value, label]) => <button key={value} className={`feed-filter${statusFilter === value ? ' active' : ''}`} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)}>{label}</button>)}</div>
               {visibleMonthGalas.length > 0 ? <div className="gala-list">{visibleMonthGalas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => setSelectedGalaId(gala.id)} onSign={() => { setSignatureGalaId(gala.id); setIsSignatureOpen(true) }} />)}</div> : (
                 <div className="empty-plans"><CalendarDays size={20} /><div><strong>{selectedDate ? 'No gala on this date yet.' : statusFilter === 'all' ? 'No galas this month yet.' : `No ${statusFilter === 'drawing' ? 'Drawing' : 'May Kulay Na'} plans here.`}</strong><span>{selectedDate ? 'Make the first move and invite the barkada.' : 'Try another filter or start a new plan.'}</span></div><button type="button" className="small-create" onClick={() => setIsCreateOpen(true)}>Plan one</button></div>
@@ -525,7 +534,7 @@ function App() {
                   return <div className="future-month" key={monthKey}><div className="future-month-label">{formatMonth(upcomingMonth)}</div><div className="gala-list">{galas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => { setSelectedGalaId(gala.id); setMonth(upcomingMonth); setSelectedDate(gala.date) }} onSign={() => { setSignatureGalaId(gala.id); setIsSignatureOpen(true) }} />)}</div></div>
                 })}
               </section>}
-              {pastGalas.length > 0 && !selectedDate && <section className="past-section" aria-labelledby="past-title"><div className="feed-heading-row"><div><h2 id="past-title">Past galas</h2><p>Good times, kept in one place.</p></div></div><div className="gala-list">{pastGalas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => setSelectedGalaId(gala.id)} onSign={() => setSelectedGalaId(gala.id)} isPast />)}</div></section>}
+              {visiblePastGalas.length > 0 && <section className="past-section" aria-labelledby="past-title"><div className="past-heading"><div><h2 id="past-title">Past galas</h2><p>{visiblePastGalas.length} {visiblePastGalas.length === 1 ? 'gala' : 'galas'} · grouped by month</p></div><button className="past-toggle" type="button" aria-expanded={pastExpanded} aria-controls="past-galas-list" onClick={() => setPastExpanded((expanded) => !expanded)}>{pastExpanded ? 'Hide' : 'Show'}<ChevronDown size={16} aria-hidden="true" /></button></div><div className="past-months" id="past-galas-list" hidden={!pastExpanded}>{[...pastGalasByMonth.entries()].map(([monthKey, galas]) => { const [year, monthNumber] = monthKey.split('-').map(Number); return <section className="past-month-group" key={monthKey} aria-label={formatMonth(new Date(year, monthNumber - 1, 1))}><h3>{formatMonth(new Date(year, monthNumber - 1, 1))}</h3><div className="gala-list">{galas.map((gala) => <GalaCard key={gala.id} gala={gala} members={activeCircle.members} selected={selectedGalaId === gala.id} onOpen={() => setSelectedGalaId(gala.id)} onSign={() => setSelectedGalaId(gala.id)} isPast />)}</div></section> })}</div></section>}
             </section>
           </section>
 

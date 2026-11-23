@@ -7,6 +7,14 @@ export type VibeTag =
   | 'Beach Day'
   | 'Coffee Run'
   | 'Birthday'
+  | 'Movie Night'
+  | 'Karaoke'
+  | 'Museum / Arts'
+  | 'Photowalk'
+  | 'Date'
+  | 'Study Session'
+  | 'Brunch'
+  | 'Hangout'
 
 export interface Member {
   id: string

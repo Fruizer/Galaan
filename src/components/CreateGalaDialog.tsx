@@ -10,7 +10,7 @@ interface CreateGalaDialogProps {
   initial?: Gala
 }
 
-const vibes: VibeTag[] = ['Food Trip', 'Roadtrip', 'Tambay', 'Beach Day', 'Coffee Run', 'Birthday']
+const vibes: VibeTag[] = ['Food Trip', 'Roadtrip', 'Tambay', 'Beach Day', 'Coffee Run', 'Birthday', 'Movie Night', 'Karaoke', 'Museum / Arts', 'Photowalk', 'Date', 'Study Session', 'Brunch', 'Hangout']
 const categories: NewGalaInput['expenses'][number]['category'][] = ['food', 'stay', 'transpo', 'other']
 interface ExpenseDraft { label: string; amount: string; category: NewGalaInput['expenses'][number]['category'] }
 
